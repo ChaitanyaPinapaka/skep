@@ -1,0 +1,141 @@
+# GoReleaser config for skep
+# Docs: https://goreleaser.com
+#
+# Cross-compilation note:
+# skep depends on tree-sitter via cgo, so CGO_ENABLED=0 cross-builds are
+# not an option. Producing darwin/* and linux/arm64 binaries from a
+# single ubuntu-latest runner requires cross toolchains (xgo, zig, or a
+# build matrix with a macos-latest runner). v0.1.0 ships linux/amd64
+# only; additional platforms land in v0.2.0 behind a proper build
+# matrix. See ROADMAP.md for the plan.
+
+version: 2
+
+project_name: skep
+
+env:
+  - CGO_ENABLED=1
+  - GO111MODULE=on
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: skep
+    main: ./cmd/skep
+    binary: skep
+    env:
+      - CGO_ENABLED=1
+    goos:
+      - linux
+    goarch:
+      - amd64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+
+archives:
+  - id: skep
+    ids:
+      - skep
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_
+      {{- if eq .Os "darwin" }}darwin
+      {{- else if eq .Os "linux" }}linux
+      {{- else }}{{ .Os }}{{ end }}_
+      {{- .Arch }}
+    formats:
+      - tar.gz
+    files:
+      - README.md
+      - LICENSE
+      - CONTRIBUTING.md
+      - SECURITY.md
+
+checksum:
+  name_template: '{{ .ProjectName }}_{{ .Version }}_checksums.txt'
+  algorithm: sha256
+
+source:
+  enabled: true
+  name_template: '{{ .ProjectName }}_{{ .Version }}_source'
+
+snapshot:
+  version_template: '{{ incpatch .Version }}-next'
+
+changelog:
+  sort: asc
+  use: git
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\(.+\))??!?:.+$'
+      order: 0
+    - title: Bug fixes
+      regexp: '^.*?fix(\(.+\))??!?:.+$'
+      order: 1
+    - title: Performance
+      regexp: '^.*?perf(\(.+\))??!?:.+$'
+      order: 2
+    - title: Refactors
+      regexp: '^.*?refactor(\(.+\))??!?:.+$'
+      order: 3
+    - title: Others
+      order: 999
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'
+      - '^ci:'
+      - Merge pull request
+      - Merge branch
+
+release:
+  github:
+    owner: ChaitanyaPinapaka
+    name: skep
+  draft: false
+  prerelease: auto
+  mode: append
+  name_template: 'skep {{ .Tag }}'
+  header: |
+    ## skep {{ .Tag }}
+
+    Install with:
+    ```sh
+    curl -fsSL https://raw.githubusercontent.com/ChaitanyaPinapaka/skep/main/install.sh | sh
+    ```
+
+dockers:
+  - image_templates:
+      - 'ghcr.io/chaitanyapinapaka/skep:{{ .Version }}'
+      - 'ghcr.io/chaitanyapinapaka/skep:latest'
+    ids:
+      - skep
+    goos: linux
+    goarch: amd64
+    dockerfile: Dockerfile
+    use: docker
+    build_flag_templates:
+      - '--pull'
+      - '--label=org.opencontainers.image.title={{ .ProjectName }}'
+      - '--label=org.opencontainers.image.description=A persistent per-repo code index served to Claude Code over MCP, with a task queue and cross-repo delegation.'
+      - '--label=org.opencontainers.image.source=https://github.com/ChaitanyaPinapaka/skep'
+      - '--label=org.opencontainers.image.version={{ .Version }}'
+      - '--label=org.opencontainers.image.revision={{ .FullCommit }}'
+      - '--label=org.opencontainers.image.licenses=MIT'
+
+sboms:
+  - id: archive
+    artifacts: archive
+    documents:
+      - '{{ .ArtifactName }}.sbom.json'
+  - id: source
+    artifacts: source
+    documents:
+      - '{{ .ArtifactName }}.sbom.json'

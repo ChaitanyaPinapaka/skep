@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#fdf8ec"/>
+      <stop offset="100%" stop-color="#f4d79e"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <g transform="translate(120,210)">
+    <text x="0" y="0" font-family="Georgia, serif" font-size="200" fill="#a87b2e">◠</text>
+    <text x="220" y="0" font-family="Georgia, serif" font-size="180" font-weight="700" fill="#2a1f12">Skep</text>
+  </g>
+  <text x="120" y="430" font-family="Georgia, serif" font-size="44" fill="#3a2e1f">AI agents for every repo.</text>
+  <text x="120" y="490" font-family="Georgia, serif" font-size="44" fill="#3a2e1f">They talk to each other.</text>
+  <text x="120" y="580" font-family="Georgia, serif" font-size="24" fill="#5a4a33">skep.sh</text>
+</svg>

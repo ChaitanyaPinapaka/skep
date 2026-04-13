@@ -1,0 +1,59 @@
+<new_task>{{.Task}}</new_task>
+
+<existing_tasks>
+{{- if .Candidates}}
+{{- range .Candidates}}
+#{{.ID}} ({{.Status}}): {{.Description}}
+{{- end}}
+{{else}}
+(none)
+{{- end}}
+</existing_tasks>
+
+<instructions>
+You are checking whether <new_task> is a semantic duplicate of any task in <existing_tasks>.
+
+A task is a duplicate if it describes substantively the same work — the same code change, the same bug fix, the same feature. Duplicates include:
+- Exact or near-exact restatements
+- Paraphrases with zero token overlap ("fix login bug" ≈ "repair auth issue")
+- Sub-tasks of an in-progress task that would overlap with what's already being done
+
+A task is NOT a duplicate if it is:
+- The opposite operation ("add X" vs "remove X")
+- A different file or module, even if the action is similar
+- A follow-up that builds on an existing task but adds distinct work
+- Unrelated work that happens to share vocabulary
+
+Respond with a single JSON object:
+{
+  "duplicate": true | false,
+  "duplicate_of": <task id from existing_tasks, or 0 if duplicate is false>,
+  "reason": "<one short sentence explaining the decision>"
+}
+
+No markdown, no wrapping, no explanation outside the JSON.
+</instructions>
+
+<example>
+<new_task>add health check endpoint at GET /health</new_task>
+<existing_tasks>
+#3 (pending): create /health handler returning 200 OK for liveness probe
+</existing_tasks>
+{"duplicate": true, "duplicate_of": 3, "reason": "both tasks add a /health liveness endpoint with identical behavior"}
+</example>
+
+<example>
+<new_task>add GET /metrics endpoint</new_task>
+<existing_tasks>
+#3 (pending): create /health handler returning 200 OK for liveness probe
+</existing_tasks>
+{"duplicate": false, "duplicate_of": 0, "reason": "different endpoints serving different concerns (metrics vs liveness)"}
+</example>
+
+<example>
+<new_task>remove the deprecated session login flow</new_task>
+<existing_tasks>
+#7 (executing): add session-backed login flow to AuthRepository
+</existing_tasks>
+{"duplicate": false, "duplicate_of": 0, "reason": "opposite operation — one adds a flow, the other removes it"}
+</example>

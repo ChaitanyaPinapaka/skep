@@ -1,0 +1,157 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+
+jobs:
+  # --- linux/amd64 build + Docker push + SBOMs + GitHub Release ---
+  # GoReleaser owns the linux path because that's where the Docker
+  # image has to be built (distroless base is a linux image) and
+  # where we need SBOMs for the release tarballs. This job creates
+  # the GitHub Release; the darwin job below attaches to it.
+  release-linux:
+    name: release (linux + docker)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # GoReleaser needs the full commit history to produce a
+          # changelog between the previous tag and this one. Shallow
+          # clones break `goreleaser release`.
+          fetch-depth: 0
+
+      - name: Install build toolchain (cgo)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install syft (SBOM)
+        uses: anchore/sbom-action/download-syft@v0
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: '~> v2'
+          args: release --clean --fail-fast
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CGO_ENABLED: '1'
+
+  # --- darwin/amd64 + darwin/arm64 native builds ---
+  # Cgo cross-compile from Linux to darwin requires either zig (fragile
+  # for tree-sitter) or xgo (docker overhead). A native macos-latest
+  # runner is the boring reliable path. The runner's Xcode toolchain
+  # handles both arm64 (native on M-series) and amd64 (Apple's own
+  # arm-to-x86 cross) without extra setup.
+  #
+  # The job depends on release-linux because GoReleaser creates the
+  # GitHub Release on that side; we attach to it here. If release-linux
+  # fails, we don't try to attach darwin binaries to a nonexistent
+  # release.
+  release-darwin:
+    name: release (darwin/amd64 + darwin/arm64)
+    needs: release-linux
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build darwin archives
+        env:
+          CGO_ENABLED: '1'
+        run: |
+          set -euxo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          COMMIT="$(git rev-parse HEAD)"
+          DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          LDFLAGS="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE}"
+
+          mkdir -p dist
+          for ARCH in amd64 arm64; do
+            STAGE="dist/skep_darwin_${ARCH}"
+            mkdir -p "$STAGE"
+            GOOS=darwin GOARCH=$ARCH go build \
+              -trimpath \
+              -ldflags "$LDFLAGS" \
+              -o "$STAGE/skep" \
+              ./cmd/skep
+            cp README.md LICENSE CONTRIBUTING.md SECURITY.md "$STAGE/"
+            # Match GoReleaser's archive naming: skep_<ver>_darwin_<arch>.tar.gz
+            tar -czf "dist/skep_${VERSION}_darwin_${ARCH}.tar.gz" -C "$STAGE" .
+          done
+
+          ls -la dist/
+
+      - name: Compute darwin checksums
+        run: |
+          set -euxo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          cd dist
+          # Emit the same two-column format GoReleaser uses
+          # (sha256  filename) so concatenation with the existing
+          # checksums.txt stays consistent.
+          shasum -a 256 \
+            "skep_${VERSION}_darwin_amd64.tar.gz" \
+            "skep_${VERSION}_darwin_arm64.tar.gz" \
+            > darwin_checksums.txt
+          cat darwin_checksums.txt
+
+      - name: Attach darwin artifacts to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euxo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          TAG="${GITHUB_REF_NAME}"
+          CHECKSUMS="skep_${VERSION}_checksums.txt"
+
+          # Pull the current checksums.txt produced by GoReleaser,
+          # append our two darwin lines, and re-upload with --clobber.
+          # install.sh greps this file for the exact archive name,
+          # so both linux and darwin checksums have to live in one
+          # file.
+          cd dist
+          gh release download "$TAG" --pattern "$CHECKSUMS"
+          cat darwin_checksums.txt >> "$CHECKSUMS"
+          cat "$CHECKSUMS"
+
+          gh release upload "$TAG" \
+            "skep_${VERSION}_darwin_amd64.tar.gz" \
+            "skep_${VERSION}_darwin_arm64.tar.gz" \
+            --clobber
+
+          gh release upload "$TAG" \
+            "$CHECKSUMS" \
+            --clobber

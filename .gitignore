@@ -1,0 +1,49 @@
+# skep build artifacts (anchored to repo root so cmd/skep/ is not ignored)
+/skep
+/skep-*
+
+# skep local data (per-repo, not shareable)
+.skep/
+
+# Claude Code local settings and spec
+.claude/
+CLAUDE.md
+BEEKEEPING.md
+
+# Local-only design notes (anchored to repo root so site/src/content/docs
+# — the public Starlight docs — is NOT affected).
+/docs/
+
+# Maintainer roadmap — lists v0.2.0 candidates, deferred work, and
+# architectural debt. Public roadmap language lives in
+# site/src/content/docs/about.md under "Roadmap".
+/ROADMAP.md
+
+# Docs site — Astro / Starlight
+site/node_modules/
+site/dist/
+site/.astro/
+site/.venv/
+site/site-dist/
+
+# Staged by the docs workflow (canonical copy is /install.sh at root)
+site/public/install.sh
+
+# Benchmark outputs (local, non-reproducible)
+benchmarks/results/
+
+# Go
+*.exe
+*.test
+*.out
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db

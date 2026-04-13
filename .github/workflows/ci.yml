@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test (linux/amd64)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build toolchain (cgo)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          # Read the Go version from go.mod so CI always matches the
+          # module declaration. Hard-pinning here causes silent
+          # toolchain re-downloads on every run when go.mod is newer.
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download modules
+        run: go mod download
+        env:
+          CGO_ENABLED: '1'
+
+      # gofmt runs first so a formatting nit fails fast before the
+      # slower test + build steps. The -l flag lists offending files;
+      # -d prints the diff so contributors can copy-paste the fix.
+      - name: Check gofmt
+        run: |
+          diff=$(gofmt -l -d .)
+          if [ -n "$diff" ]; then
+            echo "::error::gofmt found unformatted files:"
+            echo "$diff"
+            exit 1
+          fi
+
+      # go test runs vet automatically unless -vet=off, so we skip a
+      # separate vet step. Test covers every package including cmd/
+      # and benchmarks/ so a contribution that lands tests in those
+      # directories isn't silently skipped.
+      - name: Test
+        run: go test ./... -timeout 120s
+        env:
+          CGO_ENABLED: '1'
+
+      - name: Build
+        run: go build ./...
+        env:
+          CGO_ENABLED: '1'

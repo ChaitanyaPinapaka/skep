@@ -1,0 +1,207 @@
+---
+// Looping animated terminal showing a real skep workflow.
+// Pure CSS keyframes — no JS, no layout shift.
+---
+
+<div class="term" role="img" aria-label="Terminal showing skep install, init, task create, and a tmux pane split">
+  <div class="term-bar">
+    <span class="dot red"></span>
+    <span class="dot yellow"></span>
+    <span class="dot green"></span>
+    <span class="title">~/code/my-project — skep</span>
+  </div>
+
+  <div class="term-body">
+    <div class="line l1">
+      <span class="p">$</span>
+      <span class="cmd">curl -fsSL https://skep.sh/install.sh | sh</span>
+    </div>
+    <div class="line out l1-out"><span class="ok">✓</span> installed skep 0.1.0 to /usr/local/bin</div>
+
+    <div class="line l2">
+      <span class="p">$</span>
+      <span class="cmd">cd backend && skep init</span>
+    </div>
+    <div class="line out l2-out"><span class="ok">✓</span> indexed 1,284 symbols · daemon up on .skep/agent.sock</div>
+
+    <div class="line l3">
+      <span class="p">$</span>
+      <span class="cmd">skep task create "add /auth/login"</span>
+    </div>
+    <div class="line out l3-out"><span class="muted">task #1 · classified <b class="acc">large</b> · awaiting approval</span></div>
+
+    <div class="line l4">
+      <span class="p">$</span>
+      <span class="cmd">skep task approve 1 && skep task run 1</span>
+    </div>
+
+    <div class="tmux l5">
+      <div class="pane">
+        <div class="ptitle">backend</div>
+        <div class="pbody">
+          <span class="muted">▸ executing task #1</span><br/>
+          <span class="muted">▸ edited routes/auth.go</span><br/>
+          <span class="ok">✓ done · branch skep/task-1</span>
+        </div>
+      </div>
+      <div class="pane">
+        <div class="ptitle">mobile</div>
+        <div class="pbody">
+          <span class="muted">▸ wait_remote_task(backend, 1)</span><br/>
+          <span class="muted">▸ wired LoginClient</span><br/>
+          <span class="ok">✓ done</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+  .term {
+    width: 100%;
+    max-width: 30.6rem;
+    transform: scale(0.85);
+    transform-origin: top center;
+    margin-bottom: -3rem;
+    background: #0e0906;
+    border: 1px solid var(--sl-color-gray-5);
+    border-radius: 10px;
+    box-shadow: 0 20px 60px -20px rgba(0, 0, 0, 0.55),
+                0 0 0 1px rgba(224, 173, 76, 0.08);
+    overflow: hidden;
+    font-family: ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, monospace;
+    font-size: 0.8rem;
+    line-height: 1.55;
+    color: #ece0c4;
+  }
+
+  .term-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.55rem 0.8rem;
+    background: #1a120a;
+    border-bottom: 1px solid #2a1d0e;
+  }
+
+  .dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+  .dot.red { background: #ff5f57; }
+  .dot.yellow { background: #febc2e; }
+  .dot.green { background: #28c840; }
+
+  .title {
+    margin-left: auto;
+    margin-right: auto;
+    font-size: 0.72rem;
+    color: #8b7553;
+    letter-spacing: 0.02em;
+  }
+
+  .term-body {
+    padding: 0.9rem 1rem 1.1rem;
+    min-height: 16.5rem;
+  }
+
+  .line {
+    white-space: nowrap;
+    overflow: hidden;
+    opacity: 0;
+  }
+
+  .p { color: #e0ad4c; margin-right: 0.55rem; }
+  .cmd { color: #f8f2e4; }
+  .ok { color: #7ec86a; margin-right: 0.4rem; }
+  .muted { color: #a8906a; }
+  .acc { color: #e0ad4c; font-weight: 600; }
+  .out { color: #a8906a; padding-left: 1.1rem; }
+
+  /* One 14s master cycle. Staggering lives inside the keyframes as
+     percentages, so every line shares the same wall-clock start/end
+     and they all clear together at 90% before the loop restarts. */
+
+  .line, .tmux {
+    animation-duration: 14s;
+    animation-iteration-count: infinite;
+    animation-timing-function: ease-out;
+    animation-fill-mode: both;
+  }
+
+  /* appear-at-% → hold → fade-out-together at 90% → stay gone → loop */
+  @keyframes k-l1     { 0%, 1%   {opacity:0} 3%, 88%  {opacity:1} 92%, 100% {opacity:0} }
+  @keyframes k-l1-out { 0%, 8%   {opacity:0} 10%, 88% {opacity:1} 92%, 100% {opacity:0} }
+  @keyframes k-l2     { 0%, 15%  {opacity:0} 17%, 88% {opacity:1} 92%, 100% {opacity:0} }
+  @keyframes k-l2-out { 0%, 22%  {opacity:0} 24%, 88% {opacity:1} 92%, 100% {opacity:0} }
+  @keyframes k-l3     { 0%, 30%  {opacity:0} 32%, 88% {opacity:1} 92%, 100% {opacity:0} }
+  @keyframes k-l3-out { 0%, 37%  {opacity:0} 39%, 88% {opacity:1} 92%, 100% {opacity:0} }
+  @keyframes k-l4     { 0%, 44%  {opacity:0} 46%, 88% {opacity:1} 92%, 100% {opacity:0} }
+  @keyframes k-tmux   { 0%, 53%  {opacity:0} 56%, 88% {opacity:1} 92%, 100% {opacity:0} }
+
+  .l1     { animation-name: k-l1; }
+  .l1-out { animation-name: k-l1-out; }
+  .l2     { animation-name: k-l2; }
+  .l2-out { animation-name: k-l2-out; }
+  .l3     { animation-name: k-l3; }
+  .l3-out { animation-name: k-l3-out; }
+  .l4     { animation-name: k-l4; }
+
+  .tmux {
+    margin-top: 0.8rem;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+    opacity: 0;
+    animation-name: k-tmux;
+  }
+
+  .pane {
+    border: 1px solid #2a1d0e;
+    border-radius: 5px;
+    background: #120b06;
+    overflow: hidden;
+  }
+
+  .ptitle {
+    background: #1a120a;
+    color: #e0ad4c;
+    padding: 0.2rem 0.5rem;
+    font-size: 0.7rem;
+    border-bottom: 1px solid #2a1d0e;
+  }
+
+  .pbody {
+    padding: 0.45rem 0.55rem;
+    font-size: 0.7rem;
+    line-height: 1.55;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .line, .tmux {
+      opacity: 1 !important;
+      animation: none !important;
+    }
+  }
+
+  @media (max-width: 50rem) {
+    .term {
+      font-size: 0.62rem;
+      max-width: 100%;
+      transform: none;
+      margin-bottom: 0;
+    }
+    .term-body { min-height: 14rem; padding: 0.7rem 0.75rem 0.9rem; }
+    .line { font-size: 0.62rem; }
+    .pbody, .ptitle { font-size: 0.58rem; }
+  }
+
+  @media (max-width: 30rem) {
+    .term { font-size: 0.56rem; }
+    .line { font-size: 0.56rem; }
+    /* Let long commands wrap instead of clipping on tiny screens */
+    .line { white-space: normal; word-break: break-all; }
+  }
+</style>

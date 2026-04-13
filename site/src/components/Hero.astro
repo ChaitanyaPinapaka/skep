@@ -1,0 +1,151 @@
+---
+import TerminalDemo from './TerminalDemo.astro';
+
+// Starlight exposes the current route's frontmatter via
+// Astro.locals.starlightRoute.entry.data in newer versions, and via
+// Astro.props.entry.data in older ones. Try both so this component
+// works across versions without a breaking upgrade.
+const locals = (Astro.locals as any)?.starlightRoute;
+const entry = locals?.entry ?? (Astro.props as any)?.entry;
+const data = entry?.data ?? {};
+const hero = data.hero ?? {};
+const title: string = hero.title ?? data.title ?? '';
+const tagline: string = hero.tagline ?? '';
+const actions: Array<{ text: string; link: string; variant?: string; icon?: any }> = hero.actions ?? [];
+---
+
+<div class="skep-hero">
+  <div class="copy">
+    <h1 set:html={title} />
+    {tagline && <p class="tagline" set:html={tagline} />}
+
+    {actions.length > 0 && (
+      <div class="actions">
+        {actions.map((a) => (
+          <a
+            href={a.link}
+            class:list={['btn', `btn-${a.variant ?? 'primary'}`]}
+          >
+            {a.text}
+            <span class="arrow" aria-hidden="true">→</span>
+          </a>
+        ))}
+      </div>
+    )}
+  </div>
+
+  <div class="terminal-wrap">
+    <TerminalDemo />
+  </div>
+</div>
+
+<style>
+  .skep-hero {
+    display: grid;
+    align-items: center;
+    gap: 2.5rem;
+    padding-block: 1rem 2rem;
+  }
+
+  .copy {
+    display: flex;
+    flex-direction: column;
+    gap: 1.1rem;
+    text-align: center;
+    align-items: center;
+  }
+
+  h1 {
+    font-family: var(--sl-font-display, Georgia, serif);
+    font-size: clamp(2.6rem, 6vw, 4.25rem);
+    line-height: 1.02;
+    font-weight: 650;
+    letter-spacing: -0.028em;
+    margin: 0;
+    color: var(--sl-color-white);
+  }
+
+  /* Header slides in only on scroll, so the hero h1 is the only
+   * "Skep" visible on initial mobile load — keep it. */
+
+  .tagline {
+    font-size: clamp(1.05rem, 1.5vw, 1.2rem);
+    color: var(--sl-color-gray-2);
+    line-height: 1.55;
+    margin: 0;
+    max-width: 52ch;
+  }
+
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.85rem 1.25rem;
+    justify-content: center;
+    margin-top: 0.3rem;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.6rem 1.15rem;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 0.95rem;
+    text-decoration: none;
+    border: 1px solid transparent;
+    transition: background 0.15s ease, border-color 0.15s ease;
+  }
+  .btn-primary {
+    background: var(--sl-color-accent);
+    color: var(--sl-color-black);
+  }
+  .btn-primary:hover {
+    background: var(--sl-color-accent-high);
+  }
+  .btn-minimal {
+    background: transparent;
+    color: var(--sl-color-white);
+    border-color: var(--sl-color-gray-5);
+  }
+  .btn-minimal:hover {
+    border-color: var(--sl-color-accent);
+  }
+  .arrow {
+    font-size: 1.05em;
+    transition: transform 0.15s ease;
+  }
+  .btn:hover .arrow {
+    transform: translateX(2px);
+  }
+
+  .terminal-wrap {
+    display: flex;
+    justify-content: center;
+  }
+
+  @media (min-width: 50rem) {
+    .skep-hero {
+      grid-template-columns: 7fr 6fr;
+      gap: 3rem;
+      padding-block: 2rem 2.5rem;
+    }
+    .copy {
+      text-align: start;
+      align-items: flex-start;
+    }
+    .actions {
+      justify-content: flex-start;
+    }
+  }
+</style>
+
+<script>
+  const root = document.documentElement;
+  const threshold = 80;
+  const update = () => {
+    root.classList.toggle('scrolled', window.scrollY > threshold);
+  };
+  update();
+  window.addEventListener('scroll', update, { passive: true });
+</script>

@@ -1,0 +1,76 @@
+name: docs
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      # install.sh is staged into the site's public dir during build,
+      # so a change to the canonical copy at repo root must retrigger
+      # the workflow — otherwise curl https://skep.sh/install.sh serves
+      # the previously-built version until some unrelated site/** push
+      # fires the pipeline.
+      - "site/**"
+      - "install.sh"
+      - ".github/workflows/docs.yml"
+  workflow_dispatch:
+
+# Pages deploys run one-at-a-time; rapid docs pushes cancel the in-
+# flight build so the latest commit wins. We don't cancel in-progress
+# *deploys* though — a half-deployed site is worse than a delayed one.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # The build job only produces an artifact; it does not touch Pages
+    # state. Only the deploy job needs pages:write and id-token:write.
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+
+      - name: Install dependencies
+        working-directory: site
+        run: npm ci
+
+      # Copy install.sh into the site's public dir so it's served at
+      # https://skep.sh/install.sh. Canonical copy stays at repo root;
+      # this step is single-source-of-truth-preserving.
+      - name: Stage install.sh for the site
+        run: cp install.sh site/public/install.sh
+
+      - name: Build site
+        working-directory: site
+        run: npm run build
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

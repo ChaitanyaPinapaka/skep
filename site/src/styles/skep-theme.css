@@ -1,0 +1,226 @@
+/* Skep theme — amber/honey palette over Starlight defaults
+ * Accent budget: links, primary CTAs, and a single hero underline.
+ * Everything else stays neutral so the accent actually reads as accent.
+ */
+
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap');
+
+:root {
+  /* Dark mode (default) — warm near-black paper */
+  --sl-color-accent-low: #2a1d08;
+  --sl-color-accent: #e0ad4c;
+  --sl-color-accent-high: #f4d79e;
+  --sl-color-white: #f8f2e4;
+  --sl-color-gray-1: #ece0c4;
+  --sl-color-gray-2: #d4c196;
+  --sl-color-gray-3: #a8906a;   /* muted body — verified ~5.1:1 on #18100a */
+  --sl-color-gray-4: #6a5838;
+  --sl-color-gray-5: #3a2e1f;
+  --sl-color-gray-6: #221810;
+  --sl-color-black: #140d07;
+
+  --sl-font: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --sl-font-display: 'Fraunces', 'Iowan Old Style', Georgia, serif;
+}
+
+/* Light mode — cooler paper, cooler amber, less coffee-shop */
+:root[data-theme='light'] {
+  --sl-color-accent-low: #f1e4c2;
+  --sl-color-accent: #b07a1a;      /* 4.9:1 on #faf7f0 */
+  --sl-color-accent-high: #5a3e10;
+  --sl-color-white: #14110a;
+  --sl-color-gray-1: #221810;
+  --sl-color-gray-2: #3a2e1f;
+  --sl-color-gray-3: #5a4a33;
+  --sl-color-gray-4: #8b7553;
+  --sl-color-gray-5: #c7b28a;
+  --sl-color-gray-6: #e8dcc0;
+  --sl-color-gray-7: #f3ead4;
+  --sl-color-black: #faf7f0;
+  --sl-color-bg: #faf7f0;
+  --sl-color-bg-nav: #f6efdf;
+  --sl-color-bg-sidebar: #f6efdf;
+  --sl-color-text: #221810;
+  --sl-color-text-accent: #b07a1a;
+}
+
+/* Hero ------------------------------------------------------------- */
+
+/* Hero h1 is rendered by our custom Hero.astro — style it there. */
+
+/* Hide site search only on splash/landing — it competes with the
+ * primary hero CTA. Every other page keeps search in the header. */
+html[data-has-hero] site-search,
+html[data-has-hero] .sl-hidden-md:has(site-search) {
+  display: none;
+}
+
+/* Landing header: hidden on initial load, slides in once the user
+ * starts scrolling. Keeps the above-the-fold pure hero, then returns
+ * the "Skep" wordmark as persistent identity as soon as it's needed. */
+html[data-has-hero] header.header {
+  background: var(--sl-color-bg-nav);
+  border-bottom: 1px solid var(--sl-color-gray-5);
+  transform: translateY(-100%);
+  transition: transform 0.25s ease-out;
+}
+
+html[data-has-hero].scrolled header.header {
+  transform: translateY(0);
+}
+
+html[data-has-hero] .social-icons {
+  display: none;
+}
+
+/* Add top padding so hero content isn't hidden behind the absolute header */
+html[data-has-hero] .main-frame {
+  padding-top: 0;
+}
+
+/* Float the theme toggle to the bottom-right of the viewport on every page.
+ * Starlight ships it in the header; we pull it out of flow so it's a
+ * persistent, unobtrusive corner control. Default stays "auto" (system). */
+starlight-theme-select {
+  position: fixed;
+  bottom: 1rem;
+  right: 1rem;
+  z-index: 100;
+  background: var(--sl-color-bg-nav);
+  border: 1px solid var(--sl-color-gray-5);
+  border-radius: 999px;
+  padding: 0.35rem 0.6rem;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.25);
+}
+
+starlight-theme-select select {
+  background: transparent;
+  border: none;
+  color: var(--sl-color-text);
+  font-size: 0.85rem;
+}
+
+@media (max-width: 50rem) {
+  starlight-theme-select {
+    bottom: 0.75rem;
+    right: 0.75rem;
+  }
+}
+
+.hero .tagline {
+  max-width: 52ch;
+  font-size: 1.1rem;
+  line-height: 1.55;
+  color: var(--sl-color-gray-2);
+}
+
+/* The curl-install card directly under the hero */
+.hero-install {
+  max-width: 48rem;
+  margin: -0.5rem auto 2.5rem;
+  text-align: center;
+}
+
+.hero-install .expressive-code {
+  margin-inline: auto;
+}
+
+/* Small, reusable caption — replaces inline opacity hacks */
+.caption {
+  margin-top: 0.4rem;
+  font-size: 0.85rem;
+  color: var(--sl-color-gray-3);
+  letter-spacing: 0.01em;
+}
+
+/* Landing footer link row */
+.landing-footer-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.75rem;
+  margin-top: 2rem;
+  font-weight: 600;
+}
+
+.landing-footer-links a {
+  color: var(--sl-color-accent);
+}
+
+/* Accent budget tightening ----------------------------------------- */
+/* Removed: sidebar group underlines, terminal-frame amber border.     */
+/* Kept:    code-frame left border (the one identity touch).           */
+
+.expressive-code .frame {
+  border-left: 3px solid var(--sl-color-accent);
+}
+
+/* Inline code — neutral surface, not accent-tinted (fixes muddy dark) */
+:not(pre) > code {
+  background: var(--sl-color-gray-6);
+  color: var(--sl-color-gray-1);
+  border: 1px solid var(--sl-color-gray-5);
+  border-radius: 3px;
+  padding: 0.1em 0.35em;
+  font-size: 0.92em;
+}
+
+:root[data-theme='light'] :not(pre) > code {
+  background: var(--sl-color-gray-7);
+  color: var(--sl-color-gray-2);
+  border-color: var(--sl-color-gray-6);
+}
+
+/* Prev / Next pagination — compact, secondary, arrow-as-affordance.
+ * Starlight ships these as full-bleed cards; we strip the card
+ * chrome down to a single quiet row. */
+.pagination-links {
+  gap: 1rem;
+  margin-top: 3rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--sl-color-gray-5);
+}
+
+.pagination-links > a {
+  padding: 0.65rem 0.9rem;
+  border: 1px solid var(--sl-color-gray-5);
+  border-radius: 6px;
+  box-shadow: none;
+  background: transparent;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.pagination-links > a:hover {
+  border-color: var(--sl-color-accent);
+  color: var(--sl-color-accent);
+}
+
+.pagination-links > a > svg {
+  width: 0.9rem;
+  height: 0.9rem;
+  opacity: 0.7;
+}
+
+.pagination-links > a .link-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+/* The "Previous" / "Next" kicker label above the title */
+.pagination-links > a > span:first-child,
+.pagination-links > a span[class*="kicker" i] {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--sl-color-gray-3);
+  font-weight: 500;
+}
+
+/* Comparison table — keep it readable at narrow widths */
+.sl-markdown-content table {
+  font-size: 0.95rem;
+}
+.sl-markdown-content table th,
+.sl-markdown-content table td {
+  padding: 0.55rem 0.75rem;
+}

@@ -1,0 +1,137 @@
+---
+title: Skep
+description: A persistent, always-warm code index per repo that Claude Code queries via MCP. Fewer tokens, grounded plans, cross-repo delegation included.
+template: splash
+hero:
+  title: Skep
+  tagline: A persistent, always-warm code index per repo, served to Claude Code over MCP. Task queue, approval gates, and cross-repo delegation included.
+  actions:
+    - text: Get started
+      link: /getting-started/quickstart/
+      icon: right-arrow
+      variant: primary
+    - text: View on GitHub
+      link: https://github.com/ChaitanyaPinapaka/skep
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+<div class="hero-install">
+
+```bash
+curl -fsSL https://skep.sh/install.sh | sh
+```
+
+<p class="caption hero-caption">
+  Single binary · ~17&nbsp;MB · Go · MIT · Linux, macOS, WSL2
+</p>
+
+</div>
+
+---
+
+## What Skep does
+
+**The hot index is the point.** Claude Code can already work across
+repos — point it at a directory and it'll `Read` and `Grep` its way
+around. The problem is cold starts. Every session re-scans the same
+files, re-discovers the same symbols, and burns input tokens on
+context the LLM already had yesterday.
+
+Skep runs a local daemon per repo that keeps a tree-sitter + SQLite
+FTS5 index of the code **always warm**. Claude Code queries the
+index through MCP tools (`search_symbols`, `get_file_context`,
+`get_call_graph`) instead of reading files from scratch. You feel it
+in three ways:
+
+- **First response in seconds, not minutes.** Classification starts
+  against a pre-built index — no cold walk through the repo.
+- **Plans reference real symbols.** When plan generation calls
+  `search_symbols` before writing a file path, the plan cannot
+  reference a function that doesn't exist. (The lightweight
+  classifier runs without MCP — faster, but un-grounded; we accept
+  that trade-off deliberately.)
+- **Lower input-token bills.** Measurable for sessions that would
+  otherwise spend their first several turns on `Read` / `Grep` /
+  `Glob` loops. Real numbers come from
+  [Benchmarking Skep](/advanced/benchmarking/) — run it on your own
+  workload if the cost model matters to your decision.
+
+The index stays warm as long as the daemon is running (`skep daemon`
+in each repo, usually spawned in a hidden tmux session by
+`skep init`). On top of the hot index, Skep adds the scaffolding a
+fleet of Claude sessions actually needs: a task queue with dedup and
+classification, approval gates for large changes, and cross-repo
+delegation that lets one session hand structured work to another
+over an MCP socket.
+
+<CardGrid>
+  <Card title="Local agent per repo" icon="laptop">
+    Every repo gets a Skep daemon. Own index. Own git state. Own task
+    queue. No central server. No cloud. No API keys.
+  </Card>
+  <Card title="Cross-repo MCP delegation" icon="puzzle">
+    Explicit `create_remote_task` + `wait_remote_task`. The sender
+    blocks until the peer finishes. One approval per chain, not per pane.
+  </Card>
+  <Card title="The cockpit" icon="seti:powershell">
+    A single tmux session where every repo's Claude session runs in
+    its own window. The status line pulls live state from every
+    daemon — tasks executing, tasks pending, which repo is waiting on
+    approval. You get ambient awareness of all your agents without
+    giving up a permanent pane. One `skep cockpit setup` command
+    wires up the layout, keybindings, and status bar.
+  </Card>
+</CardGrid>
+
+Three commands — no polling, no manual context passing:
+
+```bash
+$ skep task create "add /auth/login to backend, wire the mobile client"
+$ skep task approve 1
+$ skep task run 1
+# backend daemon classifies, plans, executes.
+# android daemon blocks on wait_remote_task until backend is done.
+# android then executes the local changes against the real new routes.
+```
+
+---
+
+## Walkthroughs
+
+Concrete, end-to-end runs. Copy the commands, follow along, ship a real change.
+
+<CardGrid>
+  <LinkCard
+    title="Add a health endpoint"
+    description="Single-repo walkthrough. Classify → plan → approve → execute in 5 minutes."
+    href="/guides/health-check/"
+  />
+  <LinkCard
+    title="Cross-repo auth rewrite"
+    description="Android + backend in one workspace. Shows create_remote_task and wait_remote_task."
+    href="/guides/cross-repo-auth/"
+  />
+  <LinkCard
+    title="Refactor with MCP tools"
+    description="Rename a symbol across 40 files using search_symbols + get_call_graph."
+    href="/guides/refactor-with-mcp/"
+  />
+</CardGrid>
+
+---
+
+## When to use Skep
+
+Skep is a deliberately narrow tool. It earns its keep once you're
+juggling three or more repos and the coordination between them
+starts living in your head — cross-service refactors, multi-repo
+features, shared contracts between a backend and its clients.
+
+<div class="landing-footer-links">
+  <a href="/concepts/architecture/">Read the architecture →</a>
+  <a href="/getting-started/quickstart/">Full quickstart →</a>
+  <a href="/about/">Why "skep"? →</a>
+</div>

@@ -1,0 +1,51 @@
+{
+  "pairs": [
+    {"a": "add login endpoint", "b": "add login endpoint", "duplicate": true, "category": "exact"},
+    {"a": "fix race condition in scheduler", "b": "Fix race condition in scheduler", "duplicate": true, "category": "exact"},
+    {"a": "update README with install instructions", "b": "update readme with install instructions", "duplicate": true, "category": "exact"},
+
+    {"a": "add auth endpoint", "b": "add authentication endpoint", "duplicate": true, "category": "morphological"},
+    {"a": "implement user registration", "b": "implement user registrations", "duplicate": true, "category": "morphological"},
+    {"a": "refactor db connection pool", "b": "refactor database connection pool", "duplicate": true, "category": "morphological"},
+    {"a": "add pagination to users API", "b": "add pagination to users api", "duplicate": true, "category": "morphological"},
+    {"a": "migrate to pg 15", "b": "migrate to postgres 15", "duplicate": true, "category": "morphological"},
+
+    {"a": "add rate limiting to /api/login", "b": "implement rate limits on login endpoint", "duplicate": true, "category": "reorder"},
+    {"a": "validate email in signup flow", "b": "add email validation to signup", "duplicate": true, "category": "reorder"},
+    {"a": "cache user lookups in middleware", "b": "add user lookup caching to middleware", "duplicate": true, "category": "reorder"},
+    {"a": "reduce startup time of daemon", "b": "make daemon start faster", "duplicate": true, "category": "reorder"},
+
+    {"a": "fix login bug on Safari", "b": "repair auth issue on Safari", "duplicate": true, "category": "paraphrase"},
+    {"a": "make the homepage load faster", "b": "speed up landing page first paint", "duplicate": true, "category": "paraphrase"},
+    {"a": "prevent double submission on checkout", "b": "stop duplicate checkout requests", "duplicate": true, "category": "paraphrase"},
+    {"a": "remove dead code from parser", "b": "clean up unused code in parser module", "duplicate": true, "category": "paraphrase"},
+    {"a": "improve error messages for 401", "b": "better unauthorized responses", "duplicate": true, "category": "paraphrase"},
+
+    {"a": "add login endpoint", "b": "add logout endpoint", "duplicate": false, "category": "near-miss"},
+    {"a": "fix pagination on users list", "b": "fix pagination on products list", "duplicate": false, "category": "near-miss"},
+    {"a": "add Redis cache to sessions", "b": "add Redis cache to search results", "duplicate": false, "category": "near-miss"},
+    {"a": "validate email in signup flow", "b": "validate phone number in signup flow", "duplicate": false, "category": "near-miss"},
+    {"a": "increase test coverage for tasks package", "b": "increase test coverage for parser package", "duplicate": false, "category": "near-miss"},
+    {"a": "update dependency react to 18", "b": "update dependency redux to 18", "duplicate": false, "category": "near-miss"},
+
+    {"a": "migrate from AWS SES to Postmark", "b": "migrate from Postmark to AWS SES", "duplicate": false, "category": "direction-reversed"},
+    {"a": "import users from CSV", "b": "export users to CSV", "duplicate": false, "category": "direction-reversed"},
+    {"a": "enable feature flag for new onboarding", "b": "disable feature flag for new onboarding", "duplicate": false, "category": "direction-reversed"},
+
+    {"a": "add OAuth login via Google", "b": "add OAuth login via GitHub", "duplicate": false, "category": "shared-rare-word"},
+    {"a": "implement webhook retry with exponential backoff", "b": "implement webhook signing with HMAC", "duplicate": false, "category": "shared-rare-word"},
+    {"a": "document the /health endpoint", "b": "document the /metrics endpoint", "duplicate": false, "category": "shared-rare-word"},
+
+    {"a": "fix null pointer in HomeViewModel when user logs out", "b": "HomeViewModel crashes on logout due to null user", "duplicate": true, "category": "report-vs-task"},
+    {"a": "deduplicate incoming analytics events", "b": "drop duplicate analytics events on ingest", "duplicate": true, "category": "report-vs-task"},
+    {"a": "improve MCP server error handling", "b": "better error handling in MCP server", "duplicate": true, "category": "report-vs-task"},
+
+    {"a": "add dark mode toggle to settings", "b": "implement dark theme switch in preferences", "duplicate": true, "category": "synonym"},
+    {"a": "replace manual polling with websocket push", "b": "switch manual polling over to WebSocket push", "duplicate": true, "category": "synonym"},
+    {"a": "write integration tests for the scheduler", "b": "add e2e coverage for the scheduler", "duplicate": true, "category": "synonym"},
+
+    {"a": "prevent SQL injection in search endpoint", "b": "add XSS protection to search endpoint", "duplicate": false, "category": "same-surface-different-fix"},
+    {"a": "add retries to outbound webhooks", "b": "add timeouts to outbound webhooks", "duplicate": false, "category": "same-surface-different-fix"},
+    {"a": "refactor PaymentService to use interfaces", "b": "add logging to PaymentService", "duplicate": false, "category": "same-surface-different-fix"}
+  ]
+}

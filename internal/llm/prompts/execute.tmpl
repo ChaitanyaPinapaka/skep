@@ -1,0 +1,129 @@
+<task>
+<id>{{.TaskID}}</id>
+<name>{{.TaskName}}</name>
+<description>{{.TaskDescription}}</description>
+{{- if .PlanSteps}}
+<plan>
+This plan was produced by the skep classify+plan pipeline. Each step has a
+verb, a target file when applicable, the symbols it touches, an acceptance
+line, and an optional depends_on list. Complete them in dependency order.
+Treat each acceptance line as the definition-of-done for that specific step:
+do not claim the task finished unless every step's acceptance is satisfied.
+{{range .PlanSteps}}
+  Step {{.Index}} [{{.Verb}}]{{if .TargetFile}} → {{.TargetFile}}{{end}}{{if .DependsOn}} (after steps {{.DependsOn}}){{end}}
+    {{.Description}}
+{{- if .Symbols}}
+    Symbols: {{join .Symbols ", "}}
+{{- end}}
+{{- if .Acceptance}}
+    Acceptance: {{.Acceptance}}
+{{- end}}
+{{end}}</plan>
+{{- else if .Plan}}
+<plan>
+{{.Plan}}</plan>
+{{- end}}
+{{- if .Acceptance}}
+<acceptance_criteria>
+{{.Acceptance}}</acceptance_criteria>
+{{- end}}
+</task>
+
+<codebase_context>
+Repository: {{.FileCount}} files, {{.SymbolCount}} symbols
+{{- if .Languages}}
+Languages: {{join .Languages ", "}}
+{{- end}}
+{{if .FileTree}}
+File structure:
+{{- range .FileTree}}
+  {{.}}
+{{- end}}
+{{end -}}
+{{if .TopSymbols}}
+Key symbols (ranked by importance):
+{{- range .TopSymbols}}
+  {{.Name}} ({{.Kind}}) — {{.FilePath}}:{{.Line}}
+{{- if .Signature}}
+    {{.Signature}}
+{{- end}}
+{{- end}}
+{{end -}}
+{{if .RelevantEdges}}
+Call relationships:
+{{- range .RelevantEdges}}
+  {{.}}
+{{- end}}
+{{end -}}
+</codebase_context>
+{{if .RecentCommits}}
+<recent_changes>
+{{- range .RecentCommits}}
+  {{.}}
+{{- end}}
+</recent_changes>
+{{end}}
+<workflow>
+First, decide the task type:
+
+TYPE A — READ-ONLY (review, analysis, summary, Q&A, explanation):
+  The task asks you to explain, summarize, review, or analyze — NOT modify code.
+  1. Use skep MCP tools and file reads to gather information
+  2. Write your analysis to: .skep/task-{{.TaskID}}-result.md
+  3. Exit. Do NOT create a branch. Do NOT commit.
+  4. The result file is how the caller retrieves your output.
+
+TYPE B — CODE MODIFICATION (implement, fix, refactor, add, remove):
+  The task requires changing files in the repo.
+  1. Create and checkout branch: git checkout -B {{.TaskBranch}}
+  2. Implement the task — edit files, create new files
+  3. Run tests if configured
+  4. Commit your changes on the branch with a clear message
+  5. Write a summary to: .skep/task-{{.TaskID}}-result.md
+     (list changed files, commit SHAs, notable decisions)
+  6. Do NOT merge into {{.BaseBranch}} — leave the branch for human review
+  7. Do NOT 'git add .skep/' — it is gitignored. The result file stays untracked.
+
+If the task is ambiguous, ask the user before choosing a path.
+</workflow>
+{{if .TestCmd}}
+<testing>
+For code tasks, run after making changes: {{.TestCmd}}
+Fix any failures before committing.
+</testing>
+{{end}}
+<constraints>
+- Stay focused on the task — do not refactor unrelated code
+- Do not modify files outside the scope of the task
+- Match the existing code style (indentation, naming, patterns)
+- .skep/ is gitignored — never git add or commit files there
+- If the task is ambiguous, ask for clarification
+</constraints>
+
+<skep_tools>
+skep MCP tools are available — use them instead of reading files blindly:
+  search_symbols        — full-text search across symbol names, signatures, doc comments
+  get_call_graph        — who calls this function, and what does it call
+  get_file_context      — all symbols in a file without reading the entire file
+  get_overview          — architecture, top symbols, peer repos in this workspace
+  create_remote_task    — delegate work to a peer repo's agent in the same workspace
+  approve_remote_task   — approve a pending task on a peer repo so its daemon can execute it
+  wait_remote_task      — BLOCK until a remote task reaches a terminal state (done/failed/interrupted/rejected) or timeout
+  get_remote_task       — non-blocking check of a remote task's current status
+
+Cross-repo rules:
+- If the plan contains a step like "Delegate to <peer-repo>: ..." you MUST call create_remote_task
+  with repo=<peer-repo> and a clear description. Do NOT try to edit files in the peer repo directly.
+- create_remote_task BLOCKS until the peer classifies and plans the task. Its response includes the
+  peer's classification, files_affected, plan, and a next_action_hint. Surface that plan to the user
+  and follow the hint — do NOT immediately poll get_remote_task.
+- If the peer's plan looks right, call approve_remote_task(repo, task_id) to let the peer daemon
+  execute it. If the user wants changes, surface the plan and wait for guidance.
+- If the plan contains a "Wait for <peer-repo> task: ... wait_remote_task(...)" step, call
+  wait_remote_task exactly once after approve_remote_task. It blocks server-side — do NOT wrap it
+  in a loop. When it returns, check the final status: proceed only when status=done; abort or
+  surface the error when status is failed, rejected, or interrupted.
+- If the plan does NOT have a wait step, the delegation is fire-and-forget — continue local
+  steps immediately after approve_remote_task without waiting on the peer.
+- Use get_remote_task only for occasional manual checks; NEVER poll it in a loop.
+</skep_tools>

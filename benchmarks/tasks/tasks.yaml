@@ -1,0 +1,44 @@
+# Canonical benchmark tasks. Each task is run twice per repo:
+#   - variant A (baseline): plain Claude Code, no skep MCP server
+#   - variant B (treatment): Claude Code + skep MCP server on the same repo
+# The classifier+plan cost is a flat skep-only overhead and is measured
+# separately (see bench.sh).
+#
+# Keep tasks small and self-contained so they don't require external
+# services, network, or real production data.
+
+tasks:
+  - id: health-check
+    archetype: feature
+    description: |
+      Add a minimal GET /health endpoint that returns HTTP 200 and the body
+      "ok". Wire it into the existing HTTP router. Do not add any auth,
+      middleware, or database dependencies.
+
+  - id: readme-typo
+    archetype: docs
+    description: |
+      Scan the README for typos and inconsistent capitalization in the
+      "Quick start" section only. Fix anything you find. Do not reformat
+      or restructure the document.
+
+  - id: nil-guard
+    archetype: bug
+    description: |
+      Find the most recently modified function that accepts a pointer
+      argument and dereferences it without a nil check. Add a nil guard
+      at the top that returns a clear error. Do not refactor anything else.
+
+  - id: extract-constant
+    archetype: refactor
+    description: |
+      Find a string literal that appears 3+ times in the codebase and is
+      a candidate for extraction. Extract it to a package-level constant.
+      Update all call sites. Do not change any logic.
+
+  - id: test-one-function
+    archetype: test
+    description: |
+      Pick a single small pure function in the codebase that has no tests
+      yet. Write one unit test for its happy path. Do not add mocks,
+      fixtures, or table-driven scaffolding.
