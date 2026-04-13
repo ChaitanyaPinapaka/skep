@@ -2,15 +2,22 @@ VERSION := 0.1.0
 BINARY := skep
 LDFLAGS := -s -w
 
-.PHONY: build test clean release release-snapshot release-dry-run install help
+.PHONY: build test test-integration clean release release-snapshot release-dry-run install help
 
 # Build for current platform
 build:
 	CGO_ENABLED=1 go build -ldflags "$(LDFLAGS)" -o $(BINARY) ./cmd/skep/
 
-# Run all tests
+# Run all unit tests (fast path — skips integration harness)
 test:
 	CGO_ENABLED=1 go test ./... -timeout 60s
+
+# Run the integration harness (internal/integration). Slower; builds
+# the skep binary into a temp dir and drives it through real CLI
+# invocations with a mocked Claude shell-out. Gated behind a build
+# tag so `make test` stays fast. Requires bash on PATH.
+test-integration:
+	CGO_ENABLED=1 go test -tags integration ./internal/integration/... -timeout 300s -v
 
 # Clean build artifacts
 clean:
