@@ -103,8 +103,17 @@ Each repo gets its own daemon process:
 skep daemon (per repo)
 ├── fsnotify watcher         ← re-indexes on file change
 ├── Unix socket listener     ← ask / create_task / list_tasks / stop
+├── HTTP API sidecar         ← 127.0.0.1:<random>, bearer token auth
+│                              (same verbs, for VS Code / webhook / remote surfaces)
 └── task executor goroutine  ← serial queue, one task at a time
 ```
+
+The HTTP sidecar listens on a random loopback port picked at daemon
+startup and writes the URL + bearer token to `.skep/http.json`
+(mode 0600). Clients that cannot speak the Unix-socket protocol —
+notably editor extensions and webhook receivers — hit the HTTP
+surface with the same JSON verbs as the socket listener. Everything
+stays on `127.0.0.1`; there is no network exposure.
 
 ## How a task flows
 
@@ -129,9 +138,11 @@ skep task create "..."                (CLI, MCP, or peer daemon)
         ▼
 ┌─────────────────────────────────────────────┐
 │ git checkout -b skep/task-{id}-{slug}      │
-│ shell-out #2: execute plan                   │
-│   spawns a task pane in your cockpit         │
-│   LLM edits files, commits, runs tests       │
+│ materialize task_steps from plan_json       │
+│ shell-out per step (not per task):          │
+│   step 1 → LLM edits → commit → mark done   │
+│   step 2 → LLM edits → commit → mark done   │
+│   ... first-failure-stops-task, 1 retry/step│
 └─────────────────────────────────────────────┘
         │
         ▼

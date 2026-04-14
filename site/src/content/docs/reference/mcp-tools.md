@@ -86,6 +86,76 @@ but callable from the LLM mid-session.
 
 **Returns:** `{ task_id, classification, plan }`.
 
+## `show_task`
+
+Read a single task row by id, including its classification, plan,
+materialized steps, tokens used, and branch. Equivalent to
+`skep task show <id>` over MCP.
+
+**Input:**
+```json
+{ "task_id": "integer" }
+```
+
+**Returns:** the full task object with an additional `steps` array —
+one entry per materialized plan step with `seq`, `verb`, `status`,
+`target_file`, `commit_sha`, `duration_ms`, and `retry_count`.
+
+## `approve_task`
+
+Approve a task that is waiting on a human gate
+(`pending`, `classified`, or `created`). The local daemon is notified
+so it picks the task up immediately. Step rows are materialized as
+part of the transition so the executor can dispatch per-step.
+
+**Input:**
+```json
+{ "task_id": "integer" }
+```
+
+**Returns:** `{ task_id, status: "approved" }`.
+
+## `reject_task`
+
+Mark a task as rejected. Useful when the classifier routed work into
+`pending` and you have decided not to run it.
+
+**Input:**
+```json
+{ "task_id": "integer" }
+```
+
+**Returns:** `{ task_id, status: "rejected" }`.
+
+## `clarify_task`
+
+Re-run the classify + plan pipeline on a task that is in
+`pending_clarification`, supplying the answers that were missing the
+first time around. Equivalent to `skep task clarify <id>` — merges
+the answers into the task description and restarts the pipeline.
+
+**Input:**
+```json
+{
+  "task_id": "integer",
+  "answers": "string — free-form answers to the clarifying questions"
+}
+```
+
+**Returns:** the updated task with the refreshed classification and plan.
+
+## `delete_task`
+
+Hard-delete a task row. Refuses to delete tasks in `executing` —
+stop them first.
+
+**Input:**
+```json
+{ "task_id": "integer" }
+```
+
+**Returns:** `{ task_id, status: "deleted" }`.
+
 ## `dedup_task`
 
 Check whether a proposed task description duplicates an existing task

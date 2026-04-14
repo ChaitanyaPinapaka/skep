@@ -30,6 +30,7 @@ The plan-generation half of the pipeline always uses the execution model
 | `test-cmd` | auto-detected | Shell command run after task execution. |
 | `tmux-layout` | `split-h` | How task panes open. See [Pane layout](#pane-layout) below. |
 | `auto-execute-small` | `false` | When `true`, the daemon auto-approves and runs any task classified `small`. Large / ambiguous / `pending_clarification` tasks still gate on a human. |
+| `step_model_by_verb` | `{}` (empty) | Map of plan verb (`modify`, `test`, `add`, `refactor`, ...) to model name, overriding the main execution model for steps with that verb. Empty default routes every step to `model`. Lets you send cheap verbs (`test`, `modify`) to a cheap model (Haiku) and expensive verbs (`add`, `refactor`) to Opus. The infrastructure ships in v0.2.0; policy is deferred — populate the map yourself once you have usage data. |
 | `workspace` | — | Absolute path to the workspace root. Set by `skep init`. |
 
 ### Approval watchdog
@@ -74,6 +75,27 @@ skep config auto-execute-small true
 
 `model_classify` and `model_dedup` already default to Haiku 4.5 when
 the preset is `claude`, so you do not need to set them by hand.
+
+### Per-verb step routing
+
+`step_model_by_verb` is a map-valued key so it is easiest to set by
+editing `.skep/config.json` directly:
+
+```json
+{
+  "model": "opus",
+  "step_model_by_verb": {
+    "test": "haiku",
+    "modify": "haiku",
+    "add": "opus",
+    "refactor": "opus"
+  }
+}
+```
+
+With the above, step-level execution dispatches `test` and `modify`
+steps to Haiku while `add` and `refactor` steps stay on Opus. Verbs
+absent from the map fall through to `model`.
 
 ## Where values come from
 

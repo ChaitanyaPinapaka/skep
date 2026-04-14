@@ -62,9 +62,9 @@ A few terms used throughout this page:
     └─────────┘
          │
          ▼
-    ┌───────────┐   shell-out (execute plan in tmux pane)
-    │ executing │   ── approval watchdog polls every 2s,
-    └───────────┘      flags NeedsInput on confirm prompts
+    ┌───────────┐   step-level execution: one shell-out per plan step,
+    │ executing │   per-step retry (one), first-failure-stops-task,
+    └───────────┘   approval watchdog polls every 2s
          │
          ├──► done         (commits merged into base branch)
          ├──► failed       (executor error, retryable via task run)
@@ -90,6 +90,39 @@ A few terms used throughout this page:
 | `executing → failed` | executor error, retry via `skep task run <id>` |
 | `* → done` (force) | `skep task done <id>` |
 | `* → deleted` | `skep task delete <id>` |
+
+## Step-level execution
+
+When a task is approved, its plan is materialized into `task_steps`
+rows — one per `PlanStep` from the plan-generation pipeline — keyed
+on `(task_id, seq)`. The executor then runs one shell-out per step
+rather than a single shell-out for the whole plan.
+
+Per step:
+
+1. Mark the row `executing`.
+2. Shell out with a focused per-step prompt (verb, target file,
+   symbols, acceptance, step description). If `step_model_by_verb`
+   routes this verb to a specific model, the command template is
+   rewritten to inject `--model <value>`.
+3. Capture `HEAD` before and after. A commit that lands during the
+   shell-out is recorded in `task_steps.commit_sha`.
+4. On success: mark `done`, move to the next step.
+5. On failure: retry **once**, carrying the previous stdout/stderr +
+   error into the retry prompt so the model can correct course.
+6. On second failure: mark the step `failed`, mark the task `failed`,
+   stop. This is "first-failure-stops-task" — later steps are not
+   attempted, so no partial damage.
+
+`skep task show <id>` renders each step with a glyph
+(`✓` done, `✗` failed, `→` executing, `·` skipped), the verb,
+description, target file, commit SHA, duration, and retry count. A
+failed step's output is indented under its row so the blocker is
+visible without opening the result file.
+
+Resuming an interrupted task is still `skep task run <id>` — the
+step loop picks up from the first non-terminal row, so completed
+steps are not re-run.
 
 ## The approval watchdog
 

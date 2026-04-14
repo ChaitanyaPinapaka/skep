@@ -6,7 +6,9 @@ description: Every Skep command. Run skep help <command> for detailed usage and 
 Every Skep command. Run `skep help <command>` for detailed usage
 and examples from the binary itself.
 
-All commands accept `--json` for machine-readable output.
+All commands accept `--json` for machine-readable output — including
+write verbs (`task create`, `task approve`, `task reject`, `task clarify`,
+`task delete`).
 
 ## Setup and status
 
@@ -34,12 +36,12 @@ All commands accept `--json` for machine-readable output.
 
 | Command | Description |
 |---------|-------------|
-| `skep task create <desc> [--dry-run]` | Create a task. Runs four cheap dedup layers (keyword → trigram → tf-idf → minhash) plus an optional Haiku-class LLM semantic check, then fires classify (Haiku) and plan-generation (Opus / highest model) **in parallel**. `--dry-run` prints the rendered plan without persisting anything. |
+| `skep task create <desc> [--dry-run]` | Create a task. Runs four cheap dedup layers (keyword → trigram → tf-idf → minhash) plus an optional Haiku-class LLM semantic check, then fires classify (Haiku) and plan-generation (Opus / highest model) **in parallel**. `--dry-run` prints the rendered plan without persisting anything. Pass `-` as the description to read it from stdin (`echo "fix login" \| skep task create -`). |
 | `skep task run <id> [--headless]` | Execute a task. If the task has a valid Claude session id, resumes it via `claude --resume`; otherwise starts a fresh run. `--headless` forks a subprocess, redirects output to `.skep/task-<id>.log`, returns immediately. |
 | `skep task list` | List tasks in the current repo. Terminal-state rows include a short one-line result summary. |
 | `skep task list --all` | List tasks across the entire workspace. |
 | `skep tasks [--all]` | Shortcut for `task list`. |
-| `skep task show <id>` | Full task detail: classification, structured plan steps, result file, tokens used, tools used. |
+| `skep task show <id>` | Full task detail: classification, plan, per-step execution state (✓/✗/→/· glyphs with verb, target file, commit SHA, duration, retry count), result file, tokens used, tools used. |
 | `skep task attach <id>` | Jump to the task's tmux pane (`tmux switch-client`) or tail its headless log if it has no pane. |
 | `skep task approve <id>` | Approve a large or ambiguous task. |
 | `skep task reject <id>` | Reject a task. |
@@ -85,11 +87,19 @@ See the [Configuration reference](/reference/config/) for every key.
 | `skep mcp install --name <key>` | Install under a custom key. |
 | `skep mcp install --force` | Overwrite an existing entry. |
 
+## Shell completions
+
+| Command | Description |
+|---------|-------------|
+| `skep completion bash` | Emit bash completion script. Source the output from your `~/.bashrc` or `/etc/bash_completion.d/`. |
+| `skep completion zsh` | Emit zsh completion script. Place it in a directory on your `$fpath`. |
+| `skep completion fish` | Emit fish completion script. Place it in `~/.config/fish/completions/skep.fish`. |
+
 ## Global flags
 
 | Flag | Description |
 |------|-------------|
-| `--json` | Machine-readable output. Supported on every read command. |
+| `--json` | Machine-readable output. Supported on every read **and** write command — reads emit the requested data; writes emit the mutated row. |
 | `--help` | Print usage for a command. |
 | `-v` / `--version` | Print binary version. |
 

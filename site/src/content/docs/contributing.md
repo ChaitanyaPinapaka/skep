@@ -3,7 +3,7 @@ title: Contributing
 description: How to build, test, and submit changes to Skep.
 ---
 
-Skep is a single-maintainer project at v0.1.0. A lightweight process
+Skep is a single-maintainer project at v0.2.0. A lightweight process
 keeps things moving:
 
 1. **Open an issue first** for anything non-trivial. A quick "here's
@@ -84,15 +84,15 @@ go run .
 The fixture lives at `benchmarks/dedup/pairs.json` and is
 hand-labeled. Add new pair rows when you add a new category.
 
-## Scope rules for v0.1.0
+## Scope rules
 
 A few things that will get pushed back during review:
 
-- **New LLM backends.** v0.1.0 ships Claude Code only. Gemini CLI
-  and Codex CLI are planned for v0.2.0 behind an end-to-end test
-  matrix. Adding them earlier means every subsequent change has to
-  be validated against N backends, which isn't sustainable for a
-  single maintainer pre-v1.
+- **New LLM backends.** Claude Code is the only wired backend today.
+  Gemini CLI and Codex CLI presets are plumbed in `internal/llm/presets.go`
+  but gated on an end-to-end test matrix. Adding them earlier means
+  every subsequent change has to be validated against N backends,
+  which isn't sustainable for a single maintainer pre-v1.
 - **Multi-agent runtime features.** Skep is a task ledger and
   spawner, not a runtime. "The LLM should auto-escalate to a second
   LLM on failure" is firmly out of scope. Claude Code is the agent;

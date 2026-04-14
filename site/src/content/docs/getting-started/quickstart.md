@@ -16,8 +16,9 @@ skep init
 command, and whether to create a workspace. It then walks your
 files, parses them with tree-sitter, writes `.skep/index.db`, and
 registers the repo in the workspace. The cockpit tmux config at
-`~/.tmux.conf.d/skep.conf` is written automatically. v0.1.0 uses
-Claude Code as the LLM backend; additional backends arrive in v0.2.0.
+`~/.tmux.conf.d/skep.conf` is written automatically. Claude Code is
+the only wired LLM backend today; Gemini and Codex presets remain
+gated on end-to-end testing — see the [Changelog](/changelog/).
 
 ## 2. Start the daemon
 
