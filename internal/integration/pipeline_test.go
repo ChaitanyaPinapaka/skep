@@ -3,6 +3,7 @@
 package integration
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -84,6 +85,52 @@ func TestPipeline_ambiguousTaskParksForClarification(t *testing.T) {
 	id := repo.CreateTask("make the app faster")
 
 	repo.AssertTaskStatus(id, "pending_clarification")
+}
+
+// TestCLI_taskCreateStdin verifies `skep task create -` reads the
+// description from stdin and runs the same classify+plan path as the
+// positional form. Smoke test for the v0.2.0 CLI polish item — once
+// stdin is plumbed correctly, the rest of the pipeline is identical.
+func TestCLI_taskCreateStdin(t *testing.T) {
+	ws := NewWorkspace(t)
+
+	ws.MockClaude(MockResponses{
+		Classify: `{
+			"classification": "small",
+			"confidence": 0.9,
+			"reason": "tiny addition",
+			"needs_clarification": false,
+			"clarifying_questions": [],
+			"reject_reason": ""
+		}`,
+		Plan: `{
+			"plan": [
+				{
+					"verb": "add",
+					"target_file": "internal/api/ping.go",
+					"symbols": ["PingHandler"],
+					"acceptance": "PingHandler returns 200",
+					"description": "Add PingHandler"
+				}
+			],
+			"files_affected": ["internal/api/ping.go"],
+			"symbols_affected": ["PingHandler"]
+		}`,
+	})
+
+	repo := ws.NewRepo("backend", map[string]string{
+		"go.mod":  "module example.com/backend\n\ngo 1.21\n",
+		"main.go": "package main\n\nfunc main() {}\n",
+	})
+
+	out, err := repo.RunStdin("add a /ping endpoint that returns 200\n", "task", "create", "-")
+	if err != nil {
+		t.Fatalf("task create - failed: %v\n---output---\n%s", err, out)
+	}
+	// Expect output to mention a new task id like "#N name [class]".
+	if !strings.Contains(out, "#") {
+		t.Fatalf("expected task id in output, got:\n%s", out)
+	}
 }
 
 // TestPipeline_rejectedTaskTerminates stubs the classifier to

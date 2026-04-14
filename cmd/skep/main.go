@@ -363,6 +363,30 @@ jumps (prefix 1..9), popup launchers for 'skep workspace watch' and
 'skep tasks', and a status-right driven by 'skep status --oneline'.`,
 		run: cmdCockpit,
 	},
+	{
+		name:  "completion",
+		short: "Print a shell completion script (bash|zsh|fish)",
+		usage: "skep completion <bash|zsh|fish>",
+		long: `Prints a static shell completion script for skep to stdout. Source
+it from your shell rc file to get tab-completion on verbs and common
+flags.
+
+Examples:
+  # bash
+  skep completion bash > /etc/bash_completion.d/skep
+  # or user-local:
+  skep completion bash > ~/.local/share/bash-completion/completions/skep
+
+  # zsh — drop into an fpath directory
+  skep completion zsh > "${fpath[1]}/_skep"
+
+  # fish
+  skep completion fish > ~/.config/fish/completions/skep.fish
+
+The completion is static (verb + flag names). It does not introspect
+.skep/index.db or the task table, so it won't complete task IDs.`,
+		run: cmdCompletion,
+	},
 }
 
 func main() {

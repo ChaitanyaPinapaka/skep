@@ -327,6 +327,23 @@ func (r *Repo) Run(args ...string) (string, error) {
 	return out.String(), err
 }
 
+// RunStdin is Run with a string piped to stdin. Used by tests that
+// exercise CLI verbs supporting `-` as the description source (e.g.
+// `skep task create -`). Returns combined stdout+stderr and the exit
+// error. Never panics.
+func (r *Repo) RunStdin(stdin string, args ...string) (string, error) {
+	r.t.Helper()
+	cmd := exec.Command(r.ws.Bin, args...)
+	cmd.Dir = r.Path
+	cmd.Env = os.Environ()
+	cmd.Stdin = strings.NewReader(stdin)
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &out
+	err := cmd.Run()
+	return out.String(), err
+}
+
 // MustRun is Run but fails the test on non-zero exit. Returns the
 // captured output for the caller to inspect.
 func (r *Repo) MustRun(args ...string) string {

@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -207,6 +208,72 @@ func (s *Server) handleToolsList(req request) response {
 			},
 		},
 		{
+			Name:        "show_task",
+			Description: "Fetch a task in this repo by id. Returns the full task object: status, classification, plan text, session id, branch, token usage, result, and any clarify questions when status is pending_clarification. Use this to read back what create_task produced or to poll a task's state inside the classifier loop.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"task_id": map[string]interface{}{"type": "integer", "description": "Task ID from create_task"},
+				},
+				"required": []string{"task_id"},
+			},
+		},
+		{
+			Name:        "approve_task",
+			Description: "Approve a local task so the daemon can pick it up for execution. Only valid on tasks in 'pending', 'classified', or 'created' status. Use this after reading a plan from show_task and deciding the plan is acceptable.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"task_id": map[string]interface{}{"type": "integer", "description": "Task ID to approve"},
+				},
+				"required": []string{"task_id"},
+			},
+		},
+		{
+			Name:        "reject_task",
+			Description: "Reject a local task, moving it to the terminal 'rejected' state. Use this when the classifier's plan is wrong or the task should not be run at all. Rejected tasks are not retried.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"task_id": map[string]interface{}{"type": "integer", "description": "Task ID to reject"},
+				},
+				"required": []string{"task_id"},
+			},
+		},
+		{
+			Name:        "clarify_task",
+			Description: "Answer the clarifying questions on a task in 'pending_clarification' status and re-run the classify+plan pipeline with the clarified description. Pass the questions and answers as an array of objects. The task will transition back to pending/approved/pending_clarification based on the new classifier verdict.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"task_id": map[string]interface{}{"type": "integer", "description": "Task ID in pending_clarification status"},
+					"answers": map[string]interface{}{
+						"type":        "array",
+						"description": "Array of {question, answer} objects. Empty answers are dropped before re-running the pipeline.",
+						"items": map[string]interface{}{
+							"type": "object",
+							"properties": map[string]interface{}{
+								"question": map[string]interface{}{"type": "string"},
+								"answer":   map[string]interface{}{"type": "string"},
+							},
+						},
+					},
+				},
+				"required": []string{"task_id", "answers"},
+			},
+		},
+		{
+			Name:        "delete_task",
+			Description: "Hard-delete a task and its FTS row. Refuses to delete tasks in 'executing' status — stop them first via daemon shutdown or wait for completion. Irreversible; the task's branch (if any) is NOT deleted.",
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"task_id": map[string]interface{}{"type": "integer", "description": "Task ID to delete"},
+				},
+				"required": []string{"task_id"},
+			},
+		},
+		{
 			Name:        "dedup_task",
 			Description: "Check whether a proposed task description duplicates an existing task WITHOUT creating it. Runs all four cheap dedup layers (keyword, trigram, tf-idf, minhash) and optionally the LLM semantic escape hatch. Returns {is_duplicate, layer, score, task_id, reason}. Call this from the classifier BEFORE create_task or create_remote_task to avoid spawning work that duplicates something already in flight. Lightweight — typical cheap-layer run is <10ms.",
 			InputSchema: map[string]interface{}{
@@ -304,6 +371,16 @@ func (s *Server) handleToolsCall(req request) response {
 		return s.toolListTasks(req.ID)
 	case "create_task":
 		return s.toolCreateTask(req.ID, params.Arguments)
+	case "show_task":
+		return s.toolShowTask(req.ID, params.Arguments)
+	case "approve_task":
+		return s.toolApproveTask(req.ID, params.Arguments)
+	case "reject_task":
+		return s.toolRejectTask(req.ID, params.Arguments)
+	case "clarify_task":
+		return s.toolClarifyTask(req.ID, params.Arguments)
+	case "delete_task":
+		return s.toolDeleteTask(req.ID, params.Arguments)
 	case "dedup_task":
 		return s.toolDedupTask(req.ID, params.Arguments)
 	case "create_remote_task":
@@ -512,6 +589,199 @@ func (s *Server) toolCreateTask(id interface{}, args json.RawMessage) response {
 
 	result := map[string]interface{}{"task_id": task.ID, "name": task.Name, "status": task.Status}
 	data, _ := json.Marshal(result)
+	return textResponse(id, string(data))
+}
+
+func (s *Server) toolShowTask(id interface{}, args json.RawMessage) response {
+	var params struct {
+		TaskID int `json:"task_id"`
+	}
+	json.Unmarshal(args, &params)
+	if params.TaskID <= 0 {
+		return errorResponse(id, "task_id is required")
+	}
+	task, err := tasks.Get(s.store, params.TaskID)
+	if err != nil {
+		return errorResponse(id, err.Error())
+	}
+	out := map[string]interface{}{
+		"task_id":        task.ID,
+		"name":           task.Name,
+		"description":    task.Description,
+		"status":         task.Status,
+		"classification": task.Classification,
+		"plan":           task.Plan,
+		"session_id":     task.SessionID,
+		"branch":         task.Branch,
+		"tokens_used":    task.TokensUsed,
+		"result":         task.Result,
+		"created_at":     task.CreatedAt,
+	}
+	if task.Status == tasks.StatusPendingClarification {
+		if answers, rerr := tasks.ReadClarifyAnswers(s.skepDir, task.ID); rerr == nil {
+			out["clarify_questions"] = answers
+			out["clarify_file"] = tasks.ClarifyFilePath(s.skepDir, task.ID)
+		}
+	}
+	data, _ := json.Marshal(out)
+	return textResponse(id, string(data))
+}
+
+func (s *Server) toolApproveTask(id interface{}, args json.RawMessage) response {
+	var params struct {
+		TaskID int `json:"task_id"`
+	}
+	json.Unmarshal(args, &params)
+	if params.TaskID <= 0 {
+		return errorResponse(id, "task_id is required")
+	}
+	if err := tasks.Approve(s.store, params.TaskID); err != nil {
+		return errorResponse(id, err.Error())
+	}
+	// Nudge the local daemon so it picks up the newly-approved task.
+	if daemon.IsRunning(s.skepDir) {
+		daemon.Send(s.skepDir, daemon.Request{Cmd: "notify_task", TaskID: params.TaskID})
+	}
+	data, _ := json.Marshal(map[string]interface{}{"task_id": params.TaskID, "status": tasks.StatusApproved})
+	return textResponse(id, string(data))
+}
+
+func (s *Server) toolRejectTask(id interface{}, args json.RawMessage) response {
+	var params struct {
+		TaskID int `json:"task_id"`
+	}
+	json.Unmarshal(args, &params)
+	if params.TaskID <= 0 {
+		return errorResponse(id, "task_id is required")
+	}
+	if err := tasks.Reject(s.store, params.TaskID); err != nil {
+		return errorResponse(id, err.Error())
+	}
+	data, _ := json.Marshal(map[string]interface{}{"task_id": params.TaskID, "status": tasks.StatusRejected})
+	return textResponse(id, string(data))
+}
+
+func (s *Server) toolDeleteTask(id interface{}, args json.RawMessage) response {
+	var params struct {
+		TaskID int `json:"task_id"`
+	}
+	json.Unmarshal(args, &params)
+	if params.TaskID <= 0 {
+		return errorResponse(id, "task_id is required")
+	}
+	task, err := tasks.Get(s.store, params.TaskID)
+	if err != nil {
+		return errorResponse(id, err.Error())
+	}
+	if task.Status == tasks.StatusExecuting {
+		return errorResponse(id, fmt.Sprintf("task #%d is executing; stop the daemon or wait for completion before deleting", params.TaskID))
+	}
+	if err := tasks.Delete(s.store, params.TaskID); err != nil {
+		return errorResponse(id, err.Error())
+	}
+	data, _ := json.Marshal(map[string]interface{}{"task_id": params.TaskID, "deleted": true})
+	return textResponse(id, string(data))
+}
+
+// toolClarifyTask writes the supplied answers to the clarify file and
+// re-runs the classify+plan pipeline against the clarified description.
+// Mirrors `skep task clarify <id>` but sources the answers from the MCP
+// call instead of reading them from disk — so a classifier that already
+// asked the user its own questions can finish the round-trip without
+// touching the filesystem.
+func (s *Server) toolClarifyTask(id interface{}, args json.RawMessage) response {
+	var params struct {
+		TaskID  int               `json:"task_id"`
+		Answers []tasks.ClarifyQA `json:"answers"`
+	}
+	if err := json.Unmarshal(args, &params); err != nil {
+		return errorResponse(id, "invalid arguments")
+	}
+	if params.TaskID <= 0 {
+		return errorResponse(id, "task_id is required")
+	}
+	if len(params.Answers) == 0 {
+		return errorResponse(id, "answers is required")
+	}
+
+	task, err := tasks.Get(s.store, params.TaskID)
+	if err != nil {
+		return errorResponse(id, err.Error())
+	}
+	if task.Status != tasks.StatusPendingClarification {
+		return errorResponse(id, fmt.Sprintf("task #%d is %s, not pending_clarification", params.TaskID, task.Status))
+	}
+
+	// Drop empty answers — the CLI rejects them outright, and silently
+	// dropping them here matches that spirit without punishing a well-
+	// behaved classifier that sent optional fields.
+	var answers []tasks.ClarifyQA
+	for _, qa := range params.Answers {
+		if qa.Answer != "" {
+			answers = append(answers, qa)
+		}
+	}
+	if len(answers) == 0 {
+		return errorResponse(id, "no non-empty answers")
+	}
+
+	clarified := tasks.BuildClarifiedDescription(task.Description, answers)
+	transient := *task
+	transient.Description = clarified
+
+	cfg := config.Load(s.skepDir)
+	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+	defer cancel()
+
+	result, perr := tasks.ClassifyAndPlanCtx(ctx, s.store, s.root, cfg.ClassifyCmd(), cfg.PlanCmd(), &transient)
+	if perr != nil {
+		return errorResponse(id, fmt.Sprintf("re-classify: %v", perr))
+	}
+	if result == nil || result.Classification == "" {
+		return errorResponse(id, "re-classify returned no result")
+	}
+
+	task.Classification = result.Classification
+	task.Plan = tasks.FormatPipelineResult(result)
+	if len(result.Plan) > 0 {
+		if raw, mErr := json.Marshal(result.Plan); mErr == nil {
+			task.PlanStepsJSON = string(raw)
+		}
+	}
+	switch {
+	case result.Classification == "reject":
+		task.Status = tasks.StatusRejected
+		task.Result = result.RejectReason
+	case result.NeedsClarification:
+		task.Status = tasks.StatusPendingClarification
+		if path, werr := tasks.WriteClarifyFile(s.skepDir, task.ID, task.Description, result.ClarifyingQuestions); werr == nil {
+			task.Result = "still needs clarification: " + path
+		}
+	case result.Classification == "small" && cfg.AutoExecuteSmall:
+		task.Status = tasks.StatusApproved
+		task.Result = ""
+	default:
+		task.Status = tasks.StatusPending
+		task.Result = ""
+	}
+	if err := tasks.Update(s.store, task); err != nil {
+		return errorResponse(id, fmt.Sprintf("update task: %v", err))
+	}
+
+	if daemon.IsRunning(s.skepDir) {
+		daemon.Send(s.skepDir, daemon.Request{Cmd: "notify_task", TaskID: task.ID})
+	}
+
+	out := map[string]interface{}{
+		"task_id":        task.ID,
+		"status":         task.Status,
+		"classification": task.Classification,
+		"plan":           task.Plan,
+	}
+	if task.Status == tasks.StatusPendingClarification {
+		out["clarify_questions"] = result.ClarifyingQuestions
+	}
+	data, _ := json.Marshal(out)
 	return textResponse(id, string(data))
 }
 

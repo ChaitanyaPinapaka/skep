@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -542,12 +543,13 @@ func cmdStatusOneline() error {
 // aside to .skep/clarify/archive/<id>-<timestamp>.md so a subsequent
 // failure can still recover the user's answers.
 func cmdTaskClarify(args []string) error {
-	if len(args) == 0 {
+	flagArgs, positional := splitFlagsAndPositional(args)
+	if len(positional) == 0 {
 		return usageErrorf("usage: skep task clarify <id>")
 	}
-	id, err := strconv.Atoi(args[0])
+	id, err := strconv.Atoi(positional[0])
 	if err != nil {
-		return usageErrorf("task clarify: invalid id %q", args[0])
+		return usageErrorf("task clarify: invalid id %q", positional[0])
 	}
 
 	store, root, rdir, err := openStore()
@@ -635,15 +637,17 @@ func cmdTaskClarify(args []string) error {
 		return fmt.Errorf("update task: %w", err)
 	}
 
-	fmt.Printf("#%d %s [%s]\n", task.ID, task.Name, task.Classification)
-	if task.Plan != "" {
-		fmt.Println(task.Plan)
-	}
-
 	// Notify the daemon so it can pick up an auto-approved task immediately.
 	if daemon.IsRunning(rdir) {
 		daemon.Send(rdir, daemon.Request{Cmd: "notify_task", TaskID: task.ID})
 	}
+
+	jsonOrText(flagArgs, task, func() {
+		fmt.Printf("#%d %s [%s]\n", task.ID, task.Name, task.Classification)
+		if task.Plan != "" {
+			fmt.Println(task.Plan)
+		}
+	})
 	return nil
 }
 
@@ -662,9 +666,14 @@ func cmdTaskCreate(args []string) error {
 	var description string
 	var flagArgs []string
 	dryRun := false
+	readStdin := false
 	for _, a := range args {
 		if a == "--dry-run" {
 			dryRun = true
+			continue
+		}
+		if a == "-" {
+			readStdin = true
 			continue
 		}
 		if strings.HasPrefix(a, "-") {
@@ -673,8 +682,21 @@ func cmdTaskCreate(args []string) error {
 			description = a
 		}
 	}
+	if readStdin {
+		if description != "" {
+			return usageErrorf("task create: cannot pass both a positional description and '-'")
+		}
+		b, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			return fmt.Errorf("read stdin: %w", err)
+		}
+		description = strings.TrimSpace(string(b))
+		if description == "" {
+			return fmt.Errorf("task create: stdin was empty")
+		}
+	}
 	if description == "" {
-		return usageErrorf("usage: skep task create <description> [--dry-run]")
+		return usageErrorf("usage: skep task create <description|-> [--dry-run] [--json]")
 	}
 
 	store, root, rdir, err := openStore()
@@ -1044,12 +1066,13 @@ func findTmuxTargetForTask(taskID int) string {
 }
 
 func cmdApprove(args []string) error {
-	if len(args) == 0 {
+	flagArgs, positional := splitFlagsAndPositional(args)
+	if len(positional) == 0 {
 		return usageErrorf("usage: skep task approve <task-id>")
 	}
-	id, err := strconv.Atoi(args[0])
+	id, err := strconv.Atoi(positional[0])
 	if err != nil {
-		return usageErrorf("invalid task id: %s", args[0])
+		return usageErrorf("invalid task id: %s", positional[0])
 	}
 
 	store, _, rdir, err := openStore()
@@ -1061,25 +1084,36 @@ func cmdApprove(args []string) error {
 	if err := tasks.Approve(store, id); err != nil {
 		return err
 	}
-	fmt.Printf("Task #%d approved\n", id)
 
-	// Notify daemon to pick it up immediately
+	notified := false
 	if daemon.IsRunning(rdir) {
 		daemon.Send(rdir, daemon.Request{Cmd: "notify_task", TaskID: id})
-		fmt.Println("daemon will execute it")
-	} else {
-		fmt.Println("run: skep task run " + args[0])
+		notified = true
 	}
+
+	jsonOrText(flagArgs, map[string]interface{}{
+		"task_id":  id,
+		"status":   tasks.StatusApproved,
+		"notified": notified,
+	}, func() {
+		fmt.Printf("Task #%d approved\n", id)
+		if notified {
+			fmt.Println("daemon will execute it")
+		} else {
+			fmt.Println("run: skep task run " + positional[0])
+		}
+	})
 	return nil
 }
 
 func cmdReject(args []string) error {
-	if len(args) == 0 {
+	flagArgs, positional := splitFlagsAndPositional(args)
+	if len(positional) == 0 {
 		return usageErrorf("usage: skep task reject <task-id>")
 	}
-	id, err := strconv.Atoi(args[0])
+	id, err := strconv.Atoi(positional[0])
 	if err != nil {
-		return usageErrorf("invalid task id: %s", args[0])
+		return usageErrorf("invalid task id: %s", positional[0])
 	}
 
 	store, _, _, err := openStore()
@@ -1091,17 +1125,23 @@ func cmdReject(args []string) error {
 	if err := tasks.Reject(store, id); err != nil {
 		return err
 	}
-	fmt.Printf("Task #%d rejected\n", id)
+	jsonOrText(flagArgs, map[string]interface{}{
+		"task_id": id,
+		"status":  tasks.StatusRejected,
+	}, func() {
+		fmt.Printf("Task #%d rejected\n", id)
+	})
 	return nil
 }
 
 func cmdDone(args []string) error {
-	if len(args) == 0 {
+	flagArgs, positional := splitFlagsAndPositional(args)
+	if len(positional) == 0 {
 		return usageErrorf("usage: skep task done <task-id>")
 	}
-	id, err := strconv.Atoi(args[0])
+	id, err := strconv.Atoi(positional[0])
 	if err != nil {
-		return usageErrorf("invalid task id: %s", args[0])
+		return usageErrorf("invalid task id: %s", positional[0])
 	}
 
 	store, _, _, err := openStore()
@@ -1118,8 +1158,27 @@ func cmdDone(args []string) error {
 	if err := tasks.Update(store, task); err != nil {
 		return err
 	}
-	fmt.Printf("Task #%d marked done\n", id)
+	jsonOrText(flagArgs, map[string]interface{}{
+		"task_id": id,
+		"status":  tasks.StatusDone,
+	}, func() {
+		fmt.Printf("Task #%d marked done\n", id)
+	})
 	return nil
+}
+
+// splitFlagsAndPositional separates `-foo` / `--foo` arguments from bare
+// positional args. Does not attempt to parse flag values — any flag that
+// takes a value must be written as `--flag=value`.
+func splitFlagsAndPositional(args []string) (flags, positional []string) {
+	for _, a := range args {
+		if strings.HasPrefix(a, "-") && a != "-" {
+			flags = append(flags, a)
+		} else {
+			positional = append(positional, a)
+		}
+	}
+	return
 }
 
 func cmdTaskShow(args []string) error {
@@ -1253,8 +1312,12 @@ func cmdTaskDelete(args []string) error {
 	if err := tasks.Delete(store, id); err != nil {
 		return err
 	}
-	_ = flagArgs // reserved for future --json
-	fmt.Printf("Task #%d deleted\n", id)
+	jsonOrText(flagArgs, map[string]interface{}{
+		"task_id": id,
+		"deleted": true,
+	}, func() {
+		fmt.Printf("Task #%d deleted\n", id)
+	})
 
 	// Best-effort: delete the git branch the task was working on. Task row is
 	// already gone, so any failure here is non-fatal — just warn and continue.
