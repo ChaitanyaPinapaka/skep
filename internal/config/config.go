@@ -97,6 +97,15 @@ type Config struct {
 	// "use the built-in defaults" (see tasks.DefaultApprovalPatterns).
 	ApprovalWatchdog *bool    `json:"approval_watchdog,omitempty"`
 	ApprovalPatterns []string `json:"approval_patterns,omitempty"`
+
+	// StepModelByVerb optionally routes step execution to different
+	// models based on plan verb. Example:
+	//   {"modify": "haiku", "test": "haiku", "add": "opus"}
+	// Verbs not listed fall through to the task's main LLM command.
+	// Empty map (the default) routes everything to the main model.
+	// Policy is deferred — the infrastructure is here so future releases
+	// can populate the table without a schema migration.
+	StepModelByVerb map[string]string `json:"step_model_by_verb,omitempty"`
 }
 
 // ApprovalWatchdogEnabled returns whether the watchdog should run.

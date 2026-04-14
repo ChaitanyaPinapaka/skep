@@ -202,6 +202,33 @@ CREATE TABLE IF NOT EXISTS meta (
     key TEXT PRIMARY KEY,
     value TEXT
 );
+
+-- task_steps: per-step execution state for step-level task execution (#7).
+-- Materialized from tasks.plan_json when a task is approved. Each row is
+-- one discrete execution unit — the executor shells out once per step,
+-- per-step retry, per-step commit. See internal/tasks/steps.go.
+CREATE TABLE IF NOT EXISTS task_steps (
+    task_id         INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    seq             INTEGER NOT NULL,
+    verb            TEXT NOT NULL,
+    target_file     TEXT,
+    symbols_json    TEXT,
+    acceptance      TEXT,
+    depends_on_json TEXT,
+    description     TEXT,
+    status          TEXT NOT NULL DEFAULT 'pending',
+    result          TEXT,
+    session_id      TEXT,
+    model_override  TEXT,
+    tokens_used     INTEGER DEFAULT 0,
+    duration_ms     INTEGER DEFAULT 0,
+    retry_count     INTEGER DEFAULT 0,
+    commit_sha      TEXT,
+    created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (task_id, seq)
+);
+CREATE INDEX IF NOT EXISTS idx_task_steps_status ON task_steps(task_id, status);
 `
 	if _, err := s.db.Exec(schema); err != nil {
 		return fmt.Errorf("exec schema: %w", err)
