@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"sync"
@@ -40,6 +41,11 @@ type Daemon struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 	wg     sync.WaitGroup // tracks in-flight conn handlers
+
+	// HTTP API sidecar — populated by startHTTPAPI in Run, shut
+	// down in shutdown. Nil when the daemon is running without the
+	// HTTP API (e.g. in tests that don't need it).
+	httpAPI *http.Server
 }
 
 // Run starts the daemon: acquires lock, indexes, listens, polls task queue.
@@ -66,12 +72,25 @@ func Run(root, skepDir string) error {
 
 	cfg := config.Load(skepDir)
 
-	// Start listener
+	// Start Unix-socket listener
 	ln, err := Listen(skepDir, root)
 	if err != nil {
 		store.Close()
 		lock.Close()
 		return fmt.Errorf("listen: %w", err)
+	}
+
+	// Establish the HTTP API bearer token before starting the
+	// listener. If we cannot generate or persist a token we refuse
+	// to come up — the alternative is an HTTP listener with no
+	// auth, which is exactly the v0.1.0 TCP-fallback hole we
+	// closed.
+	apiToken, err := LoadOrCreateAPIToken(skepDir)
+	if err != nil {
+		ln.Close()
+		store.Close()
+		lock.Close()
+		return fmt.Errorf("api token: %w", err)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -116,6 +135,20 @@ func Run(root, skepDir string) error {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
 
+	// HTTP API sidecar — same command surface as the Unix socket,
+	// gated on the bearer token we just generated. Started after
+	// d is constructed so the handlers can reach the store and
+	// terminal manager.
+	httpSrv, err := d.startHTTPAPI(apiToken)
+	if err != nil {
+		ln.Close()
+		store.Close()
+		lock.Close()
+		return fmt.Errorf("start http api: %w", err)
+	}
+	d.httpAPI = httpSrv
+	dlog.Log("http api listening on %s", ReadAPIAddr(skepDir))
+
 	// Accept connections in background
 	go d.acceptLoop()
 
@@ -135,6 +168,7 @@ func (d *Daemon) shutdown() error {
 	fmt.Fprintf(os.Stderr, "skep daemon: shutting down\n")
 	d.cancel()
 	d.Listener.Close()
+	d.shutdownHTTPAPI(d.httpAPI)
 
 	// Wait for in-flight connection handlers to finish (with timeout)
 	done := make(chan struct{})

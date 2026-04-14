@@ -386,20 +386,100 @@ func (r *Repo) TaskStatus(id int) string {
 	return status
 }
 
-// AssertTaskStatus fails the test if task <id>'s status is not want.
-// Polls briefly to account for async classify+plan work — the CLI
-// returns after the task row is written but some status transitions
-// (e.g. daemon-driven) happen out of band.
+// AssertTaskStatus fails the test if task <id>'s status is not
+// want. Polls with a short deadline suitable for the CLI path,
+// which runs classify synchronously before returning. Use
+// AssertTaskStatusEventually for daemon-driven transitions that
+// have to wait for the task-loop ticker (~3s per poll).
 func (r *Repo) AssertTaskStatus(id int, want string) {
 	r.t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
+	r.assertTaskStatus(id, want, 2*time.Second)
+}
+
+// AssertTaskStatusEventually is AssertTaskStatus with a longer
+// deadline, meant for transitions owned by the daemon's
+// processCreatedTasks / processApprovedTasks loops. The default
+// daemon poll interval is 3 seconds; this helper waits up to 10s
+// so a single missed tick doesn't flake the test.
+func (r *Repo) AssertTaskStatusEventually(id int, want string) {
+	r.t.Helper()
+	r.assertTaskStatus(id, want, 10*time.Second)
+}
+
+func (r *Repo) assertTaskStatus(id int, want string, deadline time.Duration) {
+	r.t.Helper()
+	until := time.Now().Add(deadline)
 	var last string
-	for time.Now().Before(deadline) {
+	for time.Now().Before(until) {
 		last = r.TaskStatus(id)
 		if last == want {
 			return
 		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	r.t.Fatalf("task %d: status = %q, want %q (waited %s)", id, last, want, deadline)
+}
+
+// StartDaemon spawns the skep daemon in the background for this
+// repo, waits until the .skep/api.token + .skep/api.port files
+// appear (signalling the HTTP listener is up), and registers a
+// cleanup that sends `skep daemon stop` when the test finishes.
+//
+// Returns (apiAddr, token) — the HTTP API base address (without
+// scheme) and the bearer token clients should send.
+func (r *Repo) StartDaemon() (apiAddr, token string) {
+	r.t.Helper()
+
+	logPath := filepath.Join(r.SkepDir, "daemon.test.log")
+	logF, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		r.t.Fatalf("open daemon log: %v", err)
+	}
+
+	cmd := exec.Command(r.ws.Bin, "daemon")
+	cmd.Dir = r.Path
+	cmd.Stdout = logF
+	cmd.Stderr = logF
+	cmd.Env = os.Environ()
+	if err := cmd.Start(); err != nil {
+		logF.Close()
+		r.t.Fatalf("start daemon: %v", err)
+	}
+
+	// Poll for api.token + api.port. They appear together once the
+	// HTTP listener is bound and the daemon has finished its
+	// startup sweep.
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		tokBytes, err1 := os.ReadFile(filepath.Join(r.SkepDir, "api.token"))
+		addrBytes, err2 := os.ReadFile(filepath.Join(r.SkepDir, "api.port"))
+		if err1 == nil && err2 == nil {
+			token = strings.TrimSpace(string(tokBytes))
+			apiAddr = strings.TrimSpace(string(addrBytes))
+			break
+		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	r.t.Fatalf("task %d: status = %q, want %q", id, last, want)
+	if token == "" || apiAddr == "" {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		logF.Close()
+		logBody, _ := os.ReadFile(logPath)
+		r.t.Fatalf("daemon did not write api.token + api.port within 10s\n--- daemon log ---\n%s", logBody)
+	}
+
+	r.t.Cleanup(func() {
+		// Stop via the CLI so the daemon's normal shutdown path
+		// runs (cleanup, lock release, api.token removal). Fall
+		// back to a hard kill if stop times out.
+		stopCmd := exec.Command(r.ws.Bin, "daemon", "stop")
+		stopCmd.Dir = r.Path
+		_ = stopCmd.Run()
+		time.Sleep(200 * time.Millisecond)
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		logF.Close()
+	})
+
+	return apiAddr, token
 }
