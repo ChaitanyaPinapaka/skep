@@ -23,10 +23,10 @@ const maxStepRetries = 1
 // stepExecutionResult captures what happened during a step run.
 // Used by executeSteps to decide whether to continue, retry, or stop.
 type stepExecutionResult struct {
-	Output      string
-	CommitSHA   string // new HEAD if a commit landed, else ""
-	DurationMS  int
-	Err         error
+	Output     string
+	CommitSHA  string // new HEAD if a commit landed, else ""
+	DurationMS int
+	Err        error
 }
 
 // executeSteps drives the step-level task execution loop. It is the
