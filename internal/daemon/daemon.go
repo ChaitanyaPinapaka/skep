@@ -277,7 +277,7 @@ func (d *Daemon) dispatch(req Request) Response {
 		if req.TaskID == 0 {
 			return Response{Error: "task_id required"}
 		}
-		if err := tasks.Approve(d.Store, req.TaskID); err != nil {
+		if _, err := tasks.ApproveWithSteps(d.Store, req.TaskID, d.Config.StepModelByVerb); err != nil {
 			return Response{Error: err.Error()}
 		}
 		return Response{OK: true, Data: map[string]interface{}{"task_id": req.TaskID, "status": "approved"}}
@@ -454,6 +454,11 @@ func (d *Daemon) processCreatedTasks() {
 			}
 		}
 		tasks.Update(d.Store, task)
+		if task.Status == tasks.StatusApproved {
+			if _, merr := tasks.MaterializeSteps(d.Store, task, d.Config.StepModelByVerb); merr != nil {
+				fmt.Fprintf(os.Stderr, "skep: warning: materialize steps for task #%d: %v\n", task.ID, merr)
+			}
+		}
 	}
 }
 

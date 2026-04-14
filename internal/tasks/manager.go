@@ -238,6 +238,12 @@ func CountActive(store *index.Store) (int, error) {
 }
 
 // Approve moves a task from pending/classified to approved.
+//
+// Step materialization (populating task_steps from task.plan_json) is
+// intentionally NOT done here — Approve stays pure so call sites that
+// don't have access to config (CLI smoke paths, tests) can still use
+// it. Callers that want steps materialized at approval time should
+// use ApproveWithSteps below.
 func Approve(store *index.Store, id int) error {
 	task, err := Get(store, id)
 	if err != nil {
@@ -248,6 +254,35 @@ func Approve(store *index.Store, id int) error {
 	}
 	task.Status = StatusApproved
 	return Update(store, task)
+}
+
+// ApproveWithSteps approves a task and materializes its task_steps rows
+// from task.plan_json in a single call. Idempotent — re-approving an
+// already-approved task is a no-op on the status side, and step
+// materialization is no-op when rows already exist.
+//
+// modelByVerb is forwarded to MaterializeSteps so each step's
+// model_override column is set at materialization time. Passing nil is
+// equivalent to "no per-verb routing" — every step routes to the main
+// LLM command at execution time.
+func ApproveWithSteps(store *index.Store, id int, modelByVerb map[string]string) (*Task, error) {
+	task, err := Get(store, id)
+	if err != nil {
+		return nil, err
+	}
+	if task.Status != StatusPending && task.Status != StatusClassified && task.Status != StatusCreated && task.Status != StatusApproved {
+		return nil, fmt.Errorf("task #%d is %s, cannot approve", id, task.Status)
+	}
+	if task.Status != StatusApproved {
+		task.Status = StatusApproved
+		if err := Update(store, task); err != nil {
+			return nil, err
+		}
+	}
+	if _, err := MaterializeSteps(store, task, modelByVerb); err != nil {
+		return nil, fmt.Errorf("materialize steps for task #%d: %w", id, err)
+	}
+	return task, nil
 }
 
 // Reject marks a task as rejected.

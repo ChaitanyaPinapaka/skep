@@ -637,6 +637,16 @@ func cmdTaskClarify(args []string) error {
 		return fmt.Errorf("update task: %w", err)
 	}
 
+	// Materialize task_steps for any approved-but-not-yet-executing task
+	// so `skep task show` can render per-step state immediately. Safe to
+	// call for other statuses — MaterializeSteps skips when there's no
+	// plan_json.
+	if task.Status == tasks.StatusApproved {
+		if _, merr := tasks.MaterializeSteps(store, task, cfg.StepModelByVerb); merr != nil {
+			fmt.Fprintf(os.Stderr, "skep: warning: materialize steps: %v\n", merr)
+		}
+	}
+
 	// Notify the daemon so it can pick up an auto-approved task immediately.
 	if daemon.IsRunning(rdir) {
 		daemon.Send(rdir, daemon.Request{Cmd: "notify_task", TaskID: task.ID})
@@ -863,6 +873,11 @@ func cmdTaskCreate(args []string) error {
 			task.Status = tasks.StatusPending
 		}
 		tasks.Update(store, task)
+		if task.Status == tasks.StatusApproved {
+			if _, merr := tasks.MaterializeSteps(store, task, cfg.StepModelByVerb); merr != nil {
+				fmt.Fprintf(os.Stderr, "skep: warning: materialize steps: %v\n", merr)
+			}
+		}
 
 	case result != nil && result.ClassifyErr != nil:
 		// Classifier errored specifically (plan may still have succeeded).
@@ -1081,7 +1096,8 @@ func cmdApprove(args []string) error {
 	}
 	defer store.Close()
 
-	if err := tasks.Approve(store, id); err != nil {
+	cfg := config.Load(rdir)
+	if _, err := tasks.ApproveWithSteps(store, id, cfg.StepModelByVerb); err != nil {
 		return err
 	}
 
@@ -1217,12 +1233,15 @@ func cmdTaskShow(args []string) error {
 		resultFile = string(b)
 	}
 
+	steps, _ := tasks.ListSteps(store, id)
+
 	type showResult struct {
-		Task   *tasks.Task `json:"task"`
-		Result string      `json:"result_file,omitempty"`
+		Task   *tasks.Task   `json:"task"`
+		Steps  []*tasks.Step `json:"steps,omitempty"`
+		Result string        `json:"result_file,omitempty"`
 	}
 
-	jsonOrText(flagArgs, showResult{Task: task, Result: resultFile}, func() {
+	jsonOrText(flagArgs, showResult{Task: task, Steps: steps, Result: resultFile}, func() {
 		fmt.Printf("#%d %s\n", task.ID, task.Name)
 		fmt.Printf("Status: %s\n", task.Status)
 		if task.Classification != "" {
@@ -1248,6 +1267,39 @@ func cmdTaskShow(args []string) error {
 		if task.Acceptance != "" {
 			fmt.Printf("\nAcceptance:\n  %s\n", task.Acceptance)
 		}
+		if len(steps) > 0 {
+			done := 0
+			for _, s := range steps {
+				if s.Status == tasks.StepDone {
+					done++
+				}
+			}
+			fmt.Printf("\nSteps (%d/%d done):\n", done, len(steps))
+			for _, s := range steps {
+				marker := stepStatusMarker(s.Status)
+				fmt.Printf("  %s %d. [%s] %s", marker, s.Seq, s.Verb, s.Description)
+				if s.TargetFile != "" {
+					fmt.Printf(" → %s", s.TargetFile)
+				}
+				if s.CommitSHA != "" {
+					fmt.Printf("  (commit %s)", s.CommitSHA)
+				}
+				if s.DurationMS > 0 {
+					fmt.Printf("  [%.1fs]", float64(s.DurationMS)/1000.0)
+				}
+				if s.RetryCount > 0 {
+					fmt.Printf("  [retries: %d]", s.RetryCount)
+				}
+				fmt.Println()
+				if s.Status == tasks.StepFailed && s.Result != "" {
+					// Show the failing output for the blocked step.
+					lines := strings.Split(strings.TrimSpace(s.Result), "\n")
+					for _, line := range lines {
+						fmt.Printf("       %s\n", line)
+					}
+				}
+			}
+		}
 		if task.Result != "" {
 			fmt.Printf("\n--- task.result ---\n%s\n", task.Result)
 		}
@@ -1256,6 +1308,23 @@ func cmdTaskShow(args []string) error {
 		}
 	})
 	return nil
+}
+
+// stepStatusMarker returns a single-character glyph for a step's status,
+// used as the left gutter in `skep task show` per-step rendering.
+func stepStatusMarker(status string) string {
+	switch status {
+	case tasks.StepDone:
+		return "✓"
+	case tasks.StepFailed:
+		return "✗"
+	case tasks.StepExecuting:
+		return "→"
+	case tasks.StepSkipped:
+		return "·"
+	default:
+		return " "
+	}
 }
 
 func cmdTaskDelete(args []string) error {

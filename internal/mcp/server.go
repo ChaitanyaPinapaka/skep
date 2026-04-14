@@ -635,7 +635,8 @@ func (s *Server) toolApproveTask(id interface{}, args json.RawMessage) response 
 	if params.TaskID <= 0 {
 		return errorResponse(id, "task_id is required")
 	}
-	if err := tasks.Approve(s.store, params.TaskID); err != nil {
+	cfg := config.Load(s.skepDir)
+	if _, err := tasks.ApproveWithSteps(s.store, params.TaskID, cfg.StepModelByVerb); err != nil {
 		return errorResponse(id, err.Error())
 	}
 	// Nudge the local daemon so it picks up the newly-approved task.
@@ -766,6 +767,12 @@ func (s *Server) toolClarifyTask(id interface{}, args json.RawMessage) response 
 	}
 	if err := tasks.Update(s.store, task); err != nil {
 		return errorResponse(id, fmt.Sprintf("update task: %v", err))
+	}
+
+	if task.Status == tasks.StatusApproved {
+		if _, merr := tasks.MaterializeSteps(s.store, task, cfg.StepModelByVerb); merr != nil {
+			fmt.Fprintf(os.Stderr, "skep: warning: materialize steps: %v\n", merr)
+		}
 	}
 
 	if daemon.IsRunning(s.skepDir) {
@@ -1131,7 +1138,8 @@ func (s *Server) toolApproveRemoteTask(id interface{}, args json.RawMessage) res
 	}
 	defer depStore.Close()
 
-	if err := tasks.Approve(depStore, params.TaskID); err != nil {
+	depCfg := config.Load(depSkepDir)
+	if _, err := tasks.ApproveWithSteps(depStore, params.TaskID, depCfg.StepModelByVerb); err != nil {
 		return errorResponse(id, fmt.Sprintf("approve task #%d in %s: %v", params.TaskID, params.Repo, err))
 	}
 

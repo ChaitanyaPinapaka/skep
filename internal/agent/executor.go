@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -141,6 +142,9 @@ func Execute(root, skepDir string, store *index.Store, cfg *config.Config, task 
 }
 
 // ExecuteNonInteractive runs a task without TUI — used by the daemon.
+// When task_steps rows are materialized, drives the per-step loop from
+// step_executor.go. Falls back to the legacy single-shot shell-out when
+// the task has no plan / no materialized steps.
 func ExecuteNonInteractive(root, skepDir string, store *index.Store, cfg *config.Config, task *tasks.Task) error {
 	baseBranch, err := GitCurrentBranch(root)
 	if err != nil {
@@ -167,31 +171,59 @@ func ExecuteNonInteractive(root, skepDir string, store *index.Store, cfg *config
 	task.Branch = taskBranch
 	tasks.Update(store, task)
 
-	topSymbols, _ := store.TopSymbols(30)
-	fc, _ := store.FileCount()
-	sc, _ := store.SymbolCount()
+	// Make sure task_steps is materialized before choosing the execution
+	// path. MaterializeSteps is a no-op when rows already exist.
+	_, _ = tasks.MaterializeSteps(store, task, cfg.StepModelByVerb)
 
-	taskInfo := llm.TaskInfo{
-		ID: task.ID, Name: task.Name,
-		Description: task.Description, Plan: task.Plan, Acceptance: task.Acceptance,
-	}
-	promptCtx := llm.PromptContext{
-		FileCount: fc, SymbolCount: sc, TopSymbols: topSymbols,
-		TaskBranch: taskBranch, BaseBranch: baseBranch, TestCmd: cfg.TestCmd,
-	}
+	stepSum, _ := tasks.SummarizeSteps(store, task.ID)
+	useStepExecution := stepSum != nil && stepSum.Total > 0
 
-	prompt := llm.BuildExecutionPrompt(taskInfo, promptCtx)
-
-	output, err := llm.ShellOutQuiet(root, cfg.DaemonCmd(), prompt)
-	if err != nil {
-		retryPrompt := prompt + "\n\nPrevious attempt failed:\n" + output + "\n\nFix the issues."
-		output, err = llm.ShellOutQuiet(root, cfg.DaemonCmd(), retryPrompt)
-		if err != nil {
+	var output string
+	if useStepExecution {
+		ok, stepErr := executeSteps(context.Background(), root, store, cfg, task)
+		if stepErr != nil {
 			task.Status = tasks.StatusFailed
-			task.Result = "LLM failed: " + err.Error()
+			task.Result = "step executor failed: " + stepErr.Error()
 			tasks.Update(store, task)
 			GitCheckout(root, baseBranch)
-			return err
+			return stepErr
+		}
+		if !ok {
+			// A step failed after retry — first-failure-stops-task policy.
+			task.Status = tasks.StatusFailed
+			task.Result = formatStepFailure(store, task.ID)
+			tasks.Update(store, task)
+			GitCheckout(root, baseBranch)
+			return fmt.Errorf("task #%d: step failed", task.ID)
+		}
+		output = formatStepSummary(store, task.ID)
+	} else {
+		topSymbols, _ := store.TopSymbols(30)
+		fc, _ := store.FileCount()
+		sc, _ := store.SymbolCount()
+
+		taskInfo := llm.TaskInfo{
+			ID: task.ID, Name: task.Name,
+			Description: task.Description, Plan: task.Plan, Acceptance: task.Acceptance,
+		}
+		promptCtx := llm.PromptContext{
+			FileCount: fc, SymbolCount: sc, TopSymbols: topSymbols,
+			TaskBranch: taskBranch, BaseBranch: baseBranch, TestCmd: cfg.TestCmd,
+		}
+
+		prompt := llm.BuildExecutionPrompt(taskInfo, promptCtx)
+
+		output, err = llm.ShellOutQuiet(root, cfg.DaemonCmd(), prompt)
+		if err != nil {
+			retryPrompt := prompt + "\n\nPrevious attempt failed:\n" + output + "\n\nFix the issues."
+			output, err = llm.ShellOutQuiet(root, cfg.DaemonCmd(), retryPrompt)
+			if err != nil {
+				task.Status = tasks.StatusFailed
+				task.Result = "LLM failed: " + err.Error()
+				tasks.Update(store, task)
+				GitCheckout(root, baseBranch)
+				return err
+			}
 		}
 	}
 
@@ -352,6 +384,59 @@ func runTestCmd(root, testCmd string) (string, error) {
 	cmd.Dir = root
 	out, err := cmd.CombinedOutput()
 	return string(out), err
+}
+
+// formatStepSummary produces a human-readable summary of a task's
+// completed steps, used as the task.Result when step-level execution
+// succeeds end-to-end.
+func formatStepSummary(store *index.Store, taskID int) string {
+	steps, err := tasks.ListSteps(store, taskID)
+	if err != nil || len(steps) == 0 {
+		return "step execution completed"
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "Step-level execution: %d steps\n", len(steps))
+	for _, s := range steps {
+		fmt.Fprintf(&b, "  %d. %s [%s]", s.Seq, s.Verb, s.Status)
+		if s.CommitSHA != "" {
+			fmt.Fprintf(&b, " commit=%s", s.CommitSHA)
+		}
+		if s.DurationMS > 0 {
+			fmt.Fprintf(&b, " %.1fs", float64(s.DurationMS)/1000.0)
+		}
+		b.WriteByte('\n')
+	}
+	return b.String()
+}
+
+// formatStepFailure builds a task.Result summary when a step failed
+// after retry. Includes the failed step's seq, verb, and truncated
+// error output so `skep task show` surfaces the blocker directly.
+func formatStepFailure(store *index.Store, taskID int) string {
+	steps, err := tasks.ListSteps(store, taskID)
+	if err != nil {
+		return "step execution failed"
+	}
+	var failed *tasks.Step
+	var done int
+	for _, s := range steps {
+		if s.Status == tasks.StepDone {
+			done++
+		}
+		if s.Status == tasks.StepFailed && failed == nil {
+			failed = s
+		}
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "Step-level execution failed: %d/%d steps done\n", done, len(steps))
+	if failed != nil {
+		fmt.Fprintf(&b, "Failed at step %d/%s after %d retries\n", failed.Seq, failed.Verb, failed.RetryCount)
+		if failed.Result != "" {
+			b.WriteString("---\n")
+			b.WriteString(failed.Result)
+		}
+	}
+	return b.String()
 }
 
 // uuidRe matches Claude Code session IDs (UUID v4 format).
